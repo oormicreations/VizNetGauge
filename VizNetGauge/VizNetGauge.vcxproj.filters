@@ -54,6 +54,7 @@
     <None Include="res\VizNetGauge.rc2">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="..\readme.md" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="res\VizNetGauge.ico">

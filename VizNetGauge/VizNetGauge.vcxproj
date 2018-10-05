@@ -201,6 +201,7 @@
     <ResourceCompile Include="VizNetGauge.rc" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\readme.md" />
     <None Include="res\VizNetGauge.rc2" />
   </ItemGroup>
   <ItemGroup>
