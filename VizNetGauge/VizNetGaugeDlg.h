@@ -12,6 +12,14 @@ class CVizNetGaugeDlg : public CDialogEx
 public:
 	CVizNetGaugeDlg(CWnd* pParent = NULL);	// standard constructor
 
+	UINT m_Timer;
+	UINT m_uValueFontSize, m_uTextFontSize;
+	CString m_sFont;
+	UINT m_uDownloadSpeed, m_uUploadSpeed;
+
+	void PaintGauge();
+
+
 // Dialog Data
 #ifdef AFX_DESIGN_TIME
 	enum { IDD = IDD_VIZNETGAUGE_DIALOG };
@@ -30,4 +38,7 @@ protected:
 	afx_msg void OnPaint();
 	afx_msg HCURSOR OnQueryDragIcon();
 	DECLARE_MESSAGE_MAP()
+public:
+	afx_msg void OnTimer(UINT_PTR nIDEvent);
+	afx_msg void OnDestroy();
 };
