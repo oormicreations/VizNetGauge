@@ -98,6 +98,7 @@ HCURSOR CVizNetGaugeDlg::OnQueryDragIcon()
 
 void CVizNetGaugeDlg::InitDraw()
 {
+	m_bIsUpload = FALSE;
 	m_uDownloadSpeed = 0;
 	m_uUploadSpeed = 0;
 	
@@ -120,14 +121,25 @@ void CVizNetGaugeDlg::InitDraw()
 	m_uTextFontSize = 8;
 	m_sFont = _T("Calibri");
 
-	m_Timer = SetTimer(WM_USER + 200, 500, NULL);
+	m_uTimerDelay = 1000;
+	m_uTimer = SetTimer(WM_USER + 200, m_uTimerDelay, NULL);
 
+	Plot();
+}
+
+void CVizNetGaugeDlg::Plot()
+{
+	m_bIsUpload = FALSE;
+	PaintGauge();
+	m_bIsUpload = TRUE;
+	PaintGauge();
 }
 
 void CVizNetGaugeDlg::PaintGauge()
 {
 	CRect rClient;
 	GetClientRect(rClient);
+	rClient.bottom = rClient.bottom / 2;
 
 	CDC *pDC = this->GetDC();
 	CDC * dcMem = new CDC();
@@ -154,7 +166,8 @@ void CVizNetGaugeDlg::PaintGauge()
 	DrawText(dcMem, rClient);
 
 	//render
-	pDC->BitBlt(rClient.left, rClient.top, rClient.Width(), rClient.Height(), dcMem, 0, 0, SRCCOPY);
+	int iYpos = (m_bIsUpload)*rClient.bottom;
+	pDC->BitBlt(rClient.left, rClient.top + iYpos, rClient.Width(), rClient.Height(), dcMem, 0, 0, SRCCOPY);
 
 	//clean up
 	dcMem->SelectObject(oldMap);
@@ -211,14 +224,14 @@ void CVizNetGaugeDlg::DrawGrid(CDC * pDC, CRect clRect, BOOL bMajor)
 void CVizNetGaugeDlg::DrawBars(CDC * pDC, CRect clRect)
 {
 	CRect rBar;
-	int iBarVOffset = clRect.Height() / 2;
 	COLORREF crBar = m_crBarDn;
-	//if (bUpload)
-	//{
-	//	iBarVOffset = clRect.Height() / 40;
-	//	crBar = m_crBarUp;
-	//}
+	int iBarVOffset = 1;
 	int iXpos = 0;
+
+	if (m_bIsUpload)
+	{
+		crBar = m_crBarUp;
+	}
 
 	for (UINT i = 0; i < m_uBarCount; i++)
 	{
@@ -232,15 +245,17 @@ void CVizNetGaugeDlg::DrawBars(CDC * pDC, CRect clRect)
 
 void CVizNetGaugeDlg::DrawTextBackground(CDC * pDC, CRect clRect)
 {
-	float fAtten = 1.33f;
-	for (int y = 11; y < 60; y++)
+	float fAtten = 3.0f;
+	for (int y = 10; y < 60; y++)
 	{
-		for (int x = 10; x < 120; x++)
+		for (int x = 10; x < 140; x++)
 		{
-			if (((x - 30)*(x - 30) + (y - 30)*(y - 30) < 400) || ((x - 30)*(x - 30) + (y - 40)*(y - 40) < 400) ||
-				((x - 90)*(x - 90) + (y - 30)*(y - 30) < 400) || ((x - 90)*(x - 90) + (y - 40)*(y - 40) < 400) ||
-				((x>30) && (x<90))
-				)
+			//if (((x - 30)*(x - 30) + (y - 30)*(y - 30) < 400) || ((x - 30)*(x - 30) + (y - 40)*(y - 40) < 400) ||
+			//	((x - 90)*(x - 90) + (y - 30)*(y - 30) < 400) || ((x - 90)*(x - 90) + (y - 40)*(y - 40) < 400) ||
+			//	((x>30) && (x<90))
+			//	)
+			//if(((pow((x-70)/3,4)) + (pow((y-40)/2,4)) < (pow(20,4))))
+			
 			{
 				COLORREF crPix = pDC->GetPixel(x, y);
 				pDC->SetPixel(x, y, RGB(GetRValue(crPix) / fAtten, GetGValue(crPix) / fAtten, GetBValue(crPix) / fAtten));
@@ -297,9 +312,9 @@ void CVizNetGaugeDlg::DrawText(CDC * pDC, CRect clRect)
 
 void CVizNetGaugeDlg::OnTimer(UINT_PTR nIDEvent)
 {
-	if (nIDEvent == m_Timer)
+	if (nIDEvent == m_uTimer)
 	{
-		PaintGauge();
+		Plot();
 	}
 
 	CDialogEx::OnTimer(nIDEvent);
@@ -309,7 +324,7 @@ void CVizNetGaugeDlg::OnTimer(UINT_PTR nIDEvent)
 void CVizNetGaugeDlg::OnDestroy()
 {
 	CDialogEx::OnDestroy();
-	KillTimer(m_Timer);
+	KillTimer(m_uTimer);
 }
 
 

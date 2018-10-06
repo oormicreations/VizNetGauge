@@ -13,7 +13,8 @@ public:
 	CVizNetGaugeDlg(CWnd* pParent = NULL);	// standard constructor
 
 	UINT m_uVMaj, m_uVMin;
-	UINT m_Timer;
+	UINT m_uTimer, m_uTimerDelay;
+	BOOL m_bIsUpload;
 	UINT m_uValueFontSize, m_uTextFontSize;
 	CString m_sFont;
 	UINT m_uDownloadSpeed, m_uUploadSpeed;
@@ -25,6 +26,7 @@ public:
 
 
 	void InitDraw();
+	void Plot();
 	void PaintGauge();
 	void DrawBackground(CDC * pDC, CRect clRect);
 	void DrawGrid(CDC * pDC, CRect clRect, BOOL bMajor);
