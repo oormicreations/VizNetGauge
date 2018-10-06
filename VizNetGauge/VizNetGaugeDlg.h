@@ -32,7 +32,8 @@ public:
 	void DrawGrid(CDC * pDC, CRect clRect, BOOL bMajor);
 	void DrawBars(CDC * pDC, CRect clRect);
 	void DrawTextBackground(CDC * pDC, CRect clRect);
-	void DrawText(CDC * pDC, CRect clRect);
+	void DrawInfoText(CDC * pDC, CRect clRect);
+	void DrawVignette(CDC * pDC, CRect clRect);
 
 
 // Dialog Data
@@ -58,4 +59,6 @@ public:
 	afx_msg void OnDestroy();
 	afx_msg BOOL OnEraseBkgnd(CDC* pDC);
 	afx_msg void OnGetMinMaxInfo(MINMAXINFO* lpMMI);
+	afx_msg void OnEnterSizeMove();
+	afx_msg void OnExitSizeMove();
 };

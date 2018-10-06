@@ -37,6 +37,8 @@ BEGIN_MESSAGE_MAP(CVizNetGaugeDlg, CDialogEx)
 	ON_WM_DESTROY()
 	ON_WM_ERASEBKGND()
 	ON_WM_GETMINMAXINFO()
+	ON_WM_ENTERSIZEMOVE()
+	ON_WM_EXITSIZEMOVE()
 END_MESSAGE_MAP()
 
 
@@ -152,7 +154,7 @@ void CVizNetGaugeDlg::PaintGauge()
 	//background
 	DrawBackground(dcMem, rClient);
 
-	//grid
+	//grids
 	DrawGrid(dcMem, rClient, FALSE);
 	DrawGrid(dcMem, rClient, TRUE);
 
@@ -163,7 +165,10 @@ void CVizNetGaugeDlg::PaintGauge()
 	DrawTextBackground(dcMem, rClient);
 
 	//Text
-	DrawText(dcMem, rClient);
+	DrawInfoText(dcMem, rClient);
+
+	//Vignette
+	DrawVignette(dcMem, rClient);
 
 	//render
 	int iYpos = (m_bIsUpload)*rClient.bottom;
@@ -210,10 +215,15 @@ void CVizNetGaugeDlg::DrawGrid(CDC * pDC, CRect clRect, BOOL bMajor)
 		pDC->MoveTo(uSpacing * i, 0);
 		pDC->LineTo(uSpacing * i, clRect.bottom);
 	}
+	//for (int i = 0; i <= iGridHCount; i++)
+	//{
+	//	pDC->MoveTo(0, uSpacing * i);
+	//	pDC->LineTo(clRect.right, uSpacing * i);
+	//}
 	for (int i = 0; i <= iGridHCount; i++)
 	{
-		pDC->MoveTo(0, uSpacing * i);
-		pDC->LineTo(clRect.right, uSpacing * i);
+		pDC->MoveTo(0,  (clRect.bottom - (uSpacing *i)));
+		pDC->LineTo(clRect.right, (clRect.bottom - (uSpacing *i)));
 	}
 
 	pDC->SelectObject(oldPen);
@@ -265,7 +275,7 @@ void CVizNetGaugeDlg::DrawTextBackground(CDC * pDC, CRect clRect)
 
 }
 
-void CVizNetGaugeDlg::DrawText(CDC * pDC, CRect clRect)
+void CVizNetGaugeDlg::DrawInfoText(CDC * pDC, CRect clRect)
 {
 	CRect rText;
 
@@ -310,6 +320,54 @@ void CVizNetGaugeDlg::DrawText(CDC * pDC, CRect clRect)
 	fValue.DeleteObject();
 }
 
+void CVizNetGaugeDlg::DrawVignette(CDC * pDC, CRect clRect)
+{
+	int iVigWidth = 30 * clRect.Width()/m_uWinSzMax;
+	float fMaxAtten = 1.0f;
+
+	for (int x = 0; x < iVigWidth; x++)
+	{
+		float fAtten = 1.0f + fMaxAtten * (1.0f - ((float)x/ (float)iVigWidth));
+		for (int y = 0; y < clRect.bottom; y++)
+		{
+			COLORREF crPix = pDC->GetPixel(x, y);
+			pDC->SetPixel(x, y, RGB(GetRValue(crPix) / fAtten, GetGValue(crPix) / fAtten, GetBValue(crPix) / fAtten));
+		}
+	}
+
+	for (int x = clRect.right - iVigWidth; x < clRect.right; x++)
+	{
+		//float t = (float)x - clRect.right + iVigWidth;
+		float fAtten = 1.0f + fMaxAtten *((((float)x - clRect.right + iVigWidth) / (float)iVigWidth));
+		for (int y = 0; y < clRect.bottom; y++)
+		{
+			COLORREF crPix = pDC->GetPixel(x, y);
+			pDC->SetPixel(x, y, RGB(GetRValue(crPix) / fAtten, GetGValue(crPix) / fAtten, GetBValue(crPix) / fAtten));
+		}
+	}
+
+	for (int y = 0; y < iVigWidth; y++)
+	{
+		float fAtten = 1.0f + fMaxAtten * (1.0f - ((float)y / (float)iVigWidth));
+		for (int x = 0; x < clRect.right; x++)
+		{
+			COLORREF crPix = pDC->GetPixel(x, y);
+			pDC->SetPixel(x, y, RGB(GetRValue(crPix) / fAtten, GetGValue(crPix) / fAtten, GetBValue(crPix) / fAtten));
+		}
+	}
+
+	for (int y = clRect.bottom - iVigWidth; y < clRect.bottom; y++)
+	{
+		float fAtten = 1.0f + fMaxAtten *((((float)y - clRect.bottom + iVigWidth) / (float)iVigWidth));
+		for (int x = 0; x < clRect.right; x++)
+		{
+			COLORREF crPix = pDC->GetPixel(x, y);
+			pDC->SetPixel(x, y, RGB(GetRValue(crPix) / fAtten, GetGValue(crPix) / fAtten, GetBValue(crPix) / fAtten));
+		}
+	}
+
+}
+
 void CVizNetGaugeDlg::OnTimer(UINT_PTR nIDEvent)
 {
 	if (nIDEvent == m_uTimer)
@@ -343,4 +401,22 @@ void CVizNetGaugeDlg::OnGetMinMaxInfo(MINMAXINFO* lpMMI)
 	lpMMI->ptMaxTrackSize.y = m_uWinSzMax;
 
 	CDialogEx::OnGetMinMaxInfo(lpMMI);
+}
+
+
+void CVizNetGaugeDlg::OnEnterSizeMove()
+{
+	//prevent jerky move/size
+	KillTimer(m_uTimer);
+
+	CDialogEx::OnEnterSizeMove();
+}
+
+
+void CVizNetGaugeDlg::OnExitSizeMove()
+{
+	m_uTimer = SetTimer(WM_USER + 200, m_uTimerDelay, NULL);
+	Plot();
+
+	CDialogEx::OnExitSizeMove();
 }
