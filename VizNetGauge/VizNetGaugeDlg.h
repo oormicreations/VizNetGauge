@@ -4,6 +4,17 @@
 
 #pragma once
 
+#define _WIN32_DCOM
+#include <iostream>
+using namespace std;
+#include <comdef.h>
+#include <Wbemidl.h>
+
+#pragma comment(lib, "wbemuuid.lib")
+
+#define VNG_TIMER WM_USER + 200
+
+
 
 // CVizNetGaugeDlg dialog
 class CVizNetGaugeDlg : public CDialogEx
@@ -24,6 +35,9 @@ public:
 	UINT m_uBarCount, m_uBarWidth, m_uBarHeight, m_uBarSpacing;
 	UINT m_uTextIntensityTitle, m_uTextIntensityValue;
 
+	IWbemRefresher *pRefresher;// = NULL;
+	IWbemHiPerfEnum *pEnum;// = NULL;
+
 
 	void InitDraw();
 	void Plot();
@@ -32,8 +46,13 @@ public:
 	void DrawGrid(CDC * pDC, CRect clRect, BOOL bMajor);
 	void DrawBars(CDC * pDC, CRect clRect);
 	void DrawTextBackground(CDC * pDC, CRect clRect);
+	void DrawSpeedText(CDC * pDC, CRect clRect);
 	void DrawInfoText(CDC * pDC, CRect clRect);
 	void DrawVignette(CDC * pDC, CRect clRect);
+
+	BOOL InitWMI();
+	BOOL GetStats();
+	BOOL GetStatsRefresher();
 
 
 // Dialog Data
