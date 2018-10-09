@@ -65,9 +65,14 @@ BEGIN_MESSAGE_MAP(CVizNetGaugeDlg, CDialogEx)
 	ON_COMMAND(ID_THEMES_REDORANGE, &CVizNetGaugeDlg::OnThemesRedorange)
 	ON_COMMAND(ID_THEMES_BLUEGREEN, &CVizNetGaugeDlg::OnThemesBluegreen)
 	ON_COMMAND(ID_THEMES_GREYWHITE, &CVizNetGaugeDlg::OnThemesGreywhite)
-	ON_COMMAND(ID_INTERFACES_NIF1, &CVizNetGaugeDlg::OnInterfacesNif1)
-	ON_UPDATE_COMMAND_UI(ID_INTERFACES_NIF1, &CVizNetGaugeDlg::OnUpdateInterfacesNif1)
 	ON_COMMAND_RANGE(ID_INTERFACES_NIF1, ID_INTERFACES_NIF14, &CVizNetGaugeDlg::OnCommandRangeInterfaces)
+	ON_COMMAND(ID_INTERFACES_TOTALOFALL, &CVizNetGaugeDlg::OnInterfacesTotalofall)
+	ON_COMMAND(ID_INTERFACES_AUTO, &CVizNetGaugeDlg::OnInterfacesAuto)
+	ON_COMMAND(ID_HELP_ONLINEHELP, &CVizNetGaugeDlg::OnHelpOnlinehelp)
+	ON_COMMAND(ID_HELP_GETMOREAPPS, &CVizNetGaugeDlg::OnHelpGetmoreapps)
+	ON_COMMAND(ID_HELP_CHECKFORUPDATES, &CVizNetGaugeDlg::OnHelpCheckforupdates)
+	ON_COMMAND(ID_HELP_ABOUT, &CVizNetGaugeDlg::OnHelpAbout)
+	ON_COMMAND(ID_OPTIONS_SETTINGS, &CVizNetGaugeDlg::OnOptionsSettings)
 END_MESSAGE_MAP()
 
 
@@ -160,9 +165,12 @@ void CVizNetGaugeDlg::InitSamples()
 	m_fAveragingIntervel = 10.0f; //10sec for 1Hz update rate
 	m_uUnit = 1000; //kbps
 	m_sUnitName = _T("Kbps");
-	m_uSelectedInterface = 1; 
+	m_uSelectedInterface = 0; //total of all interfaces
 	m_uMaxValue = 0;
 	m_uNetInterfaceCount = 0;
+	m_fAverageTotalDownloadSpeed = 0.0f;
+	m_fAverageTotalUploadSpeed = 0.0f;
+
 
 }
 
@@ -183,7 +191,7 @@ void CVizNetGaugeDlg::InitDraw()
 	m_uBarHeight = 50;
 	m_uBarSpacing = 2;
 
-	m_uTextIntensityTitle = 150;
+	m_uTextIntensityTitle = 170;
 	m_uTextIntensityValue = 255;
 	m_uValueFontSize = 20;
 	m_uTextFontSize = 8;
@@ -197,6 +205,8 @@ void CVizNetGaugeDlg::InitDraw()
 void CVizNetGaugeDlg::Plot()
 {
 	GetStatsRefresher();
+	GetTotalAllInterfaces();
+	AutodetectActiveInterface();
 	RePaint();
 }
 
@@ -446,6 +456,12 @@ void CVizNetGaugeDlg::DrawSpeedText(CDC * pDC, CRect clRect)
 	CString sValue;
 	if(m_bIsUpload) sValue.Format(_T("%.2f"), m_fAverageUploadSpeed[m_uSelectedInterface]);
 	else sValue.Format(_T("%.2f"), m_fAverageDownloadSpeed[m_uSelectedInterface]);
+
+	if (m_uSelectedInterface == 0)
+	{
+		if(m_bIsUpload) sValue.Format(_T("%.2f"), m_fAverageTotalUploadSpeed);
+		else sValue.Format(_T("%.2f"), m_fAverageTotalDownloadSpeed);
+	}
 
 	DRAWTEXTPARAMS dtParams;
 	dtParams.cbSize = sizeof(DRAWTEXTPARAMS);
@@ -797,8 +813,12 @@ BOOL CVizNetGaugeDlg::GetStatsRefresher()
 			//interface names
 			wstring wstr(reinterpret_cast<wchar_t*>(data), nb / sizeof(wchar_t));
 			CString sName(wstr.c_str());
-			m_sNetInterfaces[i] = sName;
-			m_uNetInterfaceCount++;
+
+			if ((i + 2) < VNG_MAX_INTERFACES) //0 and 1 are for total and auto modes
+			{
+				m_sNetInterfaces[i + 2] = sName;
+				m_uNetInterfaceCount++;
+			}
 		}
 
 		UpdateMenuInterfaceNames();
@@ -831,7 +851,7 @@ BOOL CVizNetGaugeDlg::GetStatsRefresher()
 		//m_sNetInterfaces[i] = sName;
 
 		//sample
-		InsertSample(i, dwBytesRecdPerSec, dwBytesSentPerSec);
+		InsertSample(i+2, dwBytesRecdPerSec, dwBytesSentPerSec);
 
 		// Done with the object
 		apEnumAccess[i]->Release();
@@ -926,6 +946,54 @@ void CVizNetGaugeDlg::InsertSample(int iInterface, DWORD dwDnValue, DWORD dwUpVa
 
 }
 
+void CVizNetGaugeDlg::GetTotalAllInterfaces()
+{
+	if (m_uSelectedInterface == 0)
+	{
+		m_fAverageTotalDownloadSpeed = 0;
+		m_fAverageTotalUploadSpeed = 0;
+
+		//push down the values in array
+		for (int j = VNG_MAX_SAMPLES - 2; j >= 0; j--)
+		{
+			m_uDownloadSamples[0][j + 1] = m_uDownloadSamples[0][j];
+			m_uUploadSamples[0][j + 1] = m_uUploadSamples[0][j];
+		}
+
+		m_uDownloadSamples[0][0] = 0;
+		m_uUploadSamples[0][0] = 0;
+		for (int i = 2; i < m_uNetInterfaceCount; i++)
+		{
+			//collect sample from all interfaces in iInterface=0
+			m_uDownloadSamples[0][0] += m_uDownloadSamples[i][0];
+			m_uUploadSamples[0][0] += m_uUploadSamples[i][0];
+
+			//average of all interfaces
+			m_fAverageTotalDownloadSpeed += m_fAverageDownloadSpeed[i];
+			m_fAverageTotalUploadSpeed += m_fAverageUploadSpeed[i];
+		}
+
+	}
+}
+
+void CVizNetGaugeDlg::AutodetectActiveInterface()
+{
+	if (m_uSelectedInterface == 1)
+	{
+		float fMaxAverage = 0.0f;
+		float fSum = 0;
+		for (int i = 2; i < m_uNetInterfaceCount; i++)
+		{
+			fSum = m_fAverageDownloadSpeed[i] + m_fAverageUploadSpeed[i];
+			if (fSum > fMaxAverage)
+			{
+				fMaxAverage = fSum;
+				m_uSelectedInterface = i;
+			}
+		}
+	}
+}
+
 //menu command handlers follow
 
 void CVizNetGaugeDlg::UpdateMenuInterfaceNames()
@@ -937,9 +1005,11 @@ void CVizNetGaugeDlg::UpdateMenuInterfaceNames()
 	{
 		info.wID = 32808 + j;
 		m_MenuPopup.GetSubMenu(0)->GetSubMenu(3)->InsertMenuItem(j+2, &info, TRUE);
-		m_MenuPopup.ModifyMenuW(info.wID, MF_BYCOMMAND | MF_STRING, info.wID, m_sNetInterfaces[j]);
+		m_MenuPopup.ModifyMenuW(info.wID, MF_BYCOMMAND | MF_STRING, info.wID, m_sNetInterfaces[j+2]);
 	}
 
+	m_sNetInterfaces[0] = L"Total traffic from all Interfaces";
+	m_sNetInterfaces[1] = L"Interface: Auto";
 }
 
 void CVizNetGaugeDlg::SetupMinimizeToTray()
@@ -1249,18 +1319,80 @@ void CVizNetGaugeDlg::OnThemesGreywhite()
 }
 
 
-void CVizNetGaugeDlg::OnInterfacesNif1()
-{
-}
-
-
-void CVizNetGaugeDlg::OnUpdateInterfacesNif1(CCmdUI *pCmdUI)
-{
-	pCmdUI->SetCheck();
-}
-
 void CVizNetGaugeDlg::OnCommandRangeInterfaces(UINT nID)
 {
+	ClearCheckInterface();
 	m_MenuPopup.CheckMenuItem(nID, (MF_CHECKED | MF_BYCOMMAND));
+	m_uSelectedInterface = 2 + nID - ID_INTERFACES_NIF1;
+}
 
+void CVizNetGaugeDlg::OnInterfacesTotalofall()
+{
+	ClearCheckInterface();
+	m_MenuPopup.CheckMenuItem(ID_INTERFACES_TOTALOFALL, (MF_CHECKED | MF_BYCOMMAND));
+	m_uSelectedInterface = 0;
+}
+
+
+void CVizNetGaugeDlg::OnInterfacesAuto()
+{
+	ClearCheckInterface();
+	m_MenuPopup.CheckMenuItem(ID_INTERFACES_AUTO, (MF_CHECKED | MF_BYCOMMAND));
+	m_uSelectedInterface = 1;
+}
+
+void CVizNetGaugeDlg::ClearCheckInterface()
+{
+	for (int i = 0; i < m_uNetInterfaceCount; i++)
+	{
+		m_MenuPopup.CheckMenuItem(ID_INTERFACES_NIF1 + i, (MF_UNCHECKED | MF_BYCOMMAND));
+	}
+	m_MenuPopup.CheckMenuItem(ID_INTERFACES_TOTALOFALL, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_INTERFACES_AUTO, (MF_UNCHECKED | MF_BYCOMMAND));
+
+}
+
+void CVizNetGaugeDlg::OnHelpOnlinehelp()
+{
+	ShellExecute(NULL, _T("open"), _T("https://oormi.in/software/vng/help.html"), NULL, NULL, SW_SHOWNORMAL);
+}
+
+
+void CVizNetGaugeDlg::OnHelpGetmoreapps()
+{
+	ShellExecute(NULL, _T("open"), _T("https://github.com/oormicreations?tab=repositories"), NULL, NULL, SW_SHOWNORMAL);
+}
+
+
+void CVizNetGaugeDlg::OnHelpCheckforupdates()
+{
+	m_NetHelper.Checkforupdates(m_uVMaj, m_uVMin,
+		_T("https://oormi.in/software/cbp/updatevng.txt"),
+		_T(" https://github.com/oormicreations/VizNetGauge/releases"), _T("VizNetGauge"));
+}
+
+
+void CVizNetGaugeDlg::OnHelpAbout()
+{
+	CAboutDlg aboutDlg;
+	aboutDlg.DoModal();
+}
+
+
+void CVizNetGaugeDlg::OnOptionsSettings()
+{
+	ResetSettings();
+	SaveSettings();
+}
+
+void CVizNetGaugeDlg::SaveSettings()
+{
+}
+
+void CVizNetGaugeDlg::LoadSettings()
+{
+}
+
+void CVizNetGaugeDlg::ResetSettings()
+{
 }

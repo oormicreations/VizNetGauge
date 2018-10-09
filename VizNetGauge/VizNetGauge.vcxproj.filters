@@ -33,6 +33,12 @@
     <ClInclude Include="Resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="NetHelper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="AboutDlg.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="VizNetGauge.cpp">
@@ -42,6 +48,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="stdafx.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="NetHelper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AboutDlg.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -58,6 +70,12 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="res\VizNetGauge.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="res\OormiLogo.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="res\OormiLogo.bmp">
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>

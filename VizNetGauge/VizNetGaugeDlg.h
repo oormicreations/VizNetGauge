@@ -9,6 +9,8 @@
 using namespace std;
 #include <comdef.h>
 #include <Wbemidl.h>
+#include "NetHelper.h"
+#include "AboutDlg.h"
 
 #pragma comment(lib, "wbemuuid.lib")
 
@@ -30,6 +32,7 @@ public:
 	CMenu m_MenuPopup, m_MenuTray;
 	NOTIFYICONDATA m_TrayData;
 	BOOL m_bMinimized, m_bTopmostMode;
+	CNetHelper m_NetHelper;
 
 	UINT m_uVMaj, m_uVMin;
 	UINT m_uTimer, m_uTimerDelay;
@@ -60,13 +63,12 @@ public:
 	UINT m_uUploadSamples[VNG_MAX_INTERFACES][VNG_MAX_SAMPLES];
 	CString m_sNetInterfaces[VNG_MAX_INTERFACES];
 	UINT m_uNetInterfaceCount;
+	UINT m_uMaxValue;
 	float m_fAveragingIntervel;
 	float m_fAverageDownloadSpeed[VNG_MAX_INTERFACES];
 	float m_fAverageUploadSpeed[VNG_MAX_INTERFACES];
-	//UINT m_uDownloadSpeed;
-	//UINT m_uUploadSpeed;
-	//UINT m_uSampleCount;
-	UINT m_uMaxValue;
+	float m_fAverageTotalDownloadSpeed;
+	float m_fAverageTotalUploadSpeed;
 
 	UINT m_uUnit;
 	CString m_sUnitName;
@@ -92,6 +94,8 @@ public:
 
 	void InitSamples();
 	void InsertSample(int iInterface, DWORD dwDnValue, DWORD dwUpValue);
+	void GetTotalAllInterfaces();
+	void AutodetectActiveInterface();
 
 	void SetupMinimizeToTray();
 	void MinimizeToTray();
@@ -99,6 +103,11 @@ public:
 	void OnTrayLButtonDown(CPoint pt);
 	void OnTrayRButtonDown(CPoint pt);
 	void UpdateMenuInterfaceNames();
+	void ClearCheckInterface();
+
+	void SaveSettings();
+	void LoadSettings();
+	void ResetSettings();
 
 // Dialog Data
 #ifdef AFX_DESIGN_TIME
@@ -149,7 +158,12 @@ public:
 	afx_msg void OnThemesRedorange();
 	afx_msg void OnThemesBluegreen();
 	afx_msg void OnThemesGreywhite();
-	afx_msg void OnInterfacesNif1();
-	afx_msg void OnUpdateInterfacesNif1(CCmdUI *pCmdUI);
 	afx_msg void OnCommandRangeInterfaces(UINT nID);
+	afx_msg void OnInterfacesTotalofall();
+	afx_msg void OnInterfacesAuto();
+	afx_msg void OnHelpOnlinehelp();
+	afx_msg void OnHelpGetmoreapps();
+	afx_msg void OnHelpCheckforupdates();
+	afx_msg void OnHelpAbout();
+	afx_msg void OnOptionsSettings();
 };

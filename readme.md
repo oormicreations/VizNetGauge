@@ -33,11 +33,15 @@ Coming soon
 
 * Network speed display.
 * Speed graph.
+* Peak speed display.
+* Auto scale the graph.
 * Auto detection of active network interfaces.
-* Remembers window position.
-* Can be minimized to the tray.
-* Minimal UI.
-
+* Display a single network interface or the total traffic from all.
+* Built in themes.
+* Customizations such as averaging times, update frequency and units.
+* Remembers window position and customizations.
+* Can be minimized to the tray or can stay on top of all windows.
+* Minimal Resizable Responsive UI.
 * Supported on MS Windows 7 to 10.
 * IDE MS VS 2015, C++, WMI, MFC
 
@@ -45,7 +49,7 @@ Coming soon
 
 **What is new in version 1.0**
 
-Coming soon
+See above.
 
 ---
 
