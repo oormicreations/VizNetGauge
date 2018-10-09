@@ -42,10 +42,41 @@ BEGIN_MESSAGE_MAP(CVizNetGaugeDlg, CDialogEx)
 	ON_WM_GETMINMAXINFO()
 	ON_WM_ENTERSIZEMOVE()
 	ON_WM_EXITSIZEMOVE()
+	ON_WM_CONTEXTMENU()
+	ON_MESSAGE(WM_TRAY_MESSAGE, OnTrayNotify)
+	ON_MESSAGE(WM_TRAY_RESTORE, RestoreHandler)
+	ON_COMMAND(ID_OPTIONS_ALWAYSONTOP, &CVizNetGaugeDlg::OnOptionsAlwaysontop)
+	ON_COMMAND(ID_OPTIONS_MINIMIZETOTRAY, &CVizNetGaugeDlg::OnOptionsMinimizetotray)
+	ON_COMMAND(ID_TRAY_RESTORE, &CVizNetGaugeDlg::OnTrayRestore)
+	ON_COMMAND(ID_TRAY_EXIT, &CVizNetGaugeDlg::OnTrayExit)
+	ON_COMMAND(ID_UPDATESPEED_SLOW, &CVizNetGaugeDlg::OnUpdatespeedSlow)
+	ON_COMMAND(ID_MENU_EXIT, &CVizNetGaugeDlg::OnMenuExit)
+	ON_COMMAND(ID_UPDATESPEED_MEDIUM, &CVizNetGaugeDlg::OnUpdatespeedMedium)
+	ON_COMMAND(ID_UPDATESPEED_FAST, &CVizNetGaugeDlg::OnUpdatespeedFast)
+	ON_COMMAND(ID_UNITS_BITSPERSEC, &CVizNetGaugeDlg::OnUnitsBitspersec)
+	ON_COMMAND(ID_UNITS_KILOBITSPERSEC, &CVizNetGaugeDlg::OnUnitsKilobitspersec)
+	ON_COMMAND(ID_UNITS_MEGABITSPERSEC, &CVizNetGaugeDlg::OnUnitsMegabitspersec)
+	ON_COMMAND(ID_UNITS_GIGABITSPERSEC, &CVizNetGaugeDlg::OnUnitsGigabitspersec)
+	ON_COMMAND(ID_AVERAGING_10SAMPLES, &CVizNetGaugeDlg::OnAveraging10samples)
+	ON_COMMAND(ID_AVERAGING_30SAMPLE, &CVizNetGaugeDlg::OnAveraging30sample)
+	ON_COMMAND(ID_AVERAGING_60SAMPLES, &CVizNetGaugeDlg::OnAveraging60samples)
+	ON_COMMAND(ID_AVERAGING_INSTANTANEOUS, &CVizNetGaugeDlg::OnAveragingInstantaneous)
+	ON_COMMAND(ID_THEMES_AQUAPALE, &CVizNetGaugeDlg::OnThemesAquapale)
+	ON_COMMAND(ID_THEMES_REDORANGE, &CVizNetGaugeDlg::OnThemesRedorange)
+	ON_COMMAND(ID_THEMES_BLUEGREEN, &CVizNetGaugeDlg::OnThemesBluegreen)
+	ON_COMMAND(ID_THEMES_GREYWHITE, &CVizNetGaugeDlg::OnThemesGreywhite)
+	ON_COMMAND(ID_INTERFACES_NIF1, &CVizNetGaugeDlg::OnInterfacesNif1)
+	ON_UPDATE_COMMAND_UI(ID_INTERFACES_NIF1, &CVizNetGaugeDlg::OnUpdateInterfacesNif1)
+	ON_COMMAND_RANGE(ID_INTERFACES_NIF1, ID_INTERFACES_NIF14, &CVizNetGaugeDlg::OnCommandRangeInterfaces)
 END_MESSAGE_MAP()
 
 
 // CVizNetGaugeDlg message handlers
+LRESULT CVizNetGaugeDlg::RestoreHandler(WPARAM wp, LPARAM lp)
+{
+	MaximizeFromTray();
+	return 0;
+}
 
 BOOL CVizNetGaugeDlg::OnInitDialog()
 {
@@ -59,6 +90,13 @@ BOOL CVizNetGaugeDlg::OnInitDialog()
 	// TODO: Add extra initialization here
 	m_uVMaj = 1;
 	m_uVMin = 0;
+
+	m_bTopmostMode = FALSE;
+	m_bMinimized = FALSE;
+
+	m_MenuPopup.LoadMenu(IDR_MENU_POPUP);
+	SetupMinimizeToTray();
+
 
 	InitSamples();
 	InitDraw();
@@ -92,7 +130,8 @@ void CVizNetGaugeDlg::OnPaint()
 	}
 	else
 	{
-		Plot();
+		RePaint();//without refreshing data
+
 		CDialogEx::OnPaint();
 	}
 }
@@ -113,6 +152,9 @@ void CVizNetGaugeDlg::InitSamples()
 			m_uDownloadSamples[i][j] = 0;
 			m_uUploadSamples[i][j] = 0;
 		}
+
+		m_fAverageDownloadSpeed[i] = 0.0f;
+		m_fAverageUploadSpeed[i] = 0.0f;
 	}
 
 	m_fAveragingIntervel = 10.0f; //10sec for 1Hz update rate
@@ -120,14 +162,13 @@ void CVizNetGaugeDlg::InitSamples()
 	m_sUnitName = _T("Kbps");
 	m_uSelectedInterface = 1; 
 	m_uMaxValue = 0;
+	m_uNetInterfaceCount = 0;
 
 }
 
 void CVizNetGaugeDlg::InitDraw()
 {
 	m_bIsUpload = FALSE;
-	m_uDownloadSpeed = 0;
-	m_uUploadSpeed = 0;
 	
 	m_uBkIntensity = 60;
 	m_uGridIntensityMin = 65;
@@ -136,11 +177,11 @@ void CVizNetGaugeDlg::InitDraw()
 
 	m_crBarDn = RGB(20, 200, 200);
 	m_crBarUp = RGB(200, 200, 150);
-	
+	m_crBackground = RGB(m_uBkIntensity, m_uBkIntensity, m_uBkIntensity);
+
 	m_uBarWidth = 5;
 	m_uBarHeight = 50;
 	m_uBarSpacing = 2;
-	m_uBarCount = m_uWinSzMax / (m_uBarWidth + m_uBarSpacing);
 
 	m_uTextIntensityTitle = 150;
 	m_uTextIntensityValue = 255;
@@ -148,7 +189,6 @@ void CVizNetGaugeDlg::InitDraw()
 	m_uTextFontSize = 8;
 	m_sFont = _T("Calibri");
 
-	//Plot();
 	m_uTimerDelay = 1000; //1 Hz
 	m_uTimer = SetTimer(VNG_TIMER, m_uTimerDelay, NULL);
 
@@ -157,7 +197,11 @@ void CVizNetGaugeDlg::InitDraw()
 void CVizNetGaugeDlg::Plot()
 {
 	GetStatsRefresher();
+	RePaint();
+}
 
+void CVizNetGaugeDlg::RePaint()
+{
 	m_bIsUpload = FALSE;
 	PaintGauge();
 	m_bIsUpload = TRUE;
@@ -218,8 +262,8 @@ void CVizNetGaugeDlg::PaintGauge()
 
 void CVizNetGaugeDlg::DrawBackground(CDC * pDC, CRect clRect)
 {
-	COLORREF crBack = RGB(m_uBkIntensity, m_uBkIntensity, m_uBkIntensity);
-	pDC->FillSolidRect(clRect, crBack);
+	//COLORREF crBack = RGB(m_uBkIntensity, m_uBkIntensity, m_uBkIntensity);
+	pDC->FillSolidRect(clRect, m_crBackground);
 }
 
 void CVizNetGaugeDlg::DrawGrid(CDC * pDC, CRect clRect, BOOL bMajor)
@@ -270,17 +314,22 @@ void CVizNetGaugeDlg::DrawBars(CDC * pDC, CRect clRect)
 	int iBarVOffset = 1;
 	int iXpos = 0;
 	UINT uMax = 0;
+	m_uBarCount = 0;
+	m_uMaxValue = 0;
+
+	//bar count
+	m_uBarCount = clRect.Width() / (m_uBarWidth + m_uBarSpacing);
 
 	if (m_bIsUpload)
 	{
 		//normalize
-		for (UINT i = 0; i < VNG_MAX_SAMPLES; i++)
+		for (UINT i = 0; i < m_uBarCount; i++)
 		{
 			if (m_uUploadSamples[m_uSelectedInterface][i] > uMax)uMax = m_uUploadSamples[m_uSelectedInterface][i];
 		}
 		if (uMax < 1)return;
 
-		for (UINT i = 0; i < VNG_MAX_SAMPLES; i++)
+		for (UINT i = 0; i < m_uBarCount; i++)
 		{
 			m_uBarHeight = (uMaxBarHeight * m_uUploadSamples[m_uSelectedInterface][i]) / uMax;
 			rBar.SetRect(0 + iXpos, clRect.Height() - m_uBarHeight - iBarVOffset, m_uBarWidth + iXpos, clRect.Height() - iBarVOffset);
@@ -291,13 +340,13 @@ void CVizNetGaugeDlg::DrawBars(CDC * pDC, CRect clRect)
 	else
 	{
 		//normalize
-		for (UINT i = 0; i < VNG_MAX_SAMPLES; i++)
+		for (UINT i = 0; i < m_uBarCount; i++)
 		{
 			if (m_uDownloadSamples[m_uSelectedInterface][i] > uMax)uMax = m_uDownloadSamples[m_uSelectedInterface][i];
 		}
 		if (uMax < 1)return;
 
-		for (UINT i = 0; i < VNG_MAX_SAMPLES; i++)
+		for (UINT i = 0; i < m_uBarCount; i++)
 		{
 			m_uBarHeight = (uMaxBarHeight * m_uDownloadSamples[m_uSelectedInterface][i]) / uMax;
 			rBar.SetRect(0 + iXpos, clRect.Height() - m_uBarHeight - iBarVOffset, m_uBarWidth + iXpos, clRect.Height() - iBarVOffset);
@@ -368,7 +417,7 @@ void CVizNetGaugeDlg::DrawInfoText(CDC * pDC, CRect clRect)
 	pDC->DrawTextEx(sValue.GetBuffer(), -1, rText, DT_RIGHT| DT_BOTTOM | DT_SINGLELINE, &dtParams);
 
 	//display peak level and mid line
-	sValue.Format(_T("Peak %d Kbps"), m_uMaxValue);
+	sValue.Format(_T("Peak %d %s"), m_uMaxValue, m_sUnitName);
 	for (int x = 0; x < clRect.right; x = x + 6)
 	{
 		pDC->SetPixel(x, clRect.bottom / 2, RGB(120, 120, 120));
@@ -489,6 +538,16 @@ void CVizNetGaugeDlg::OnDestroy()
 	CDialogEx::OnDestroy();
 	KillTimer(m_uTimer);
 	WMICleanup();
+
+	if (m_bMinimized)
+	{
+		Shell_NotifyIcon(NIM_DELETE, &m_TrayData);
+	}
+
+	// Unload the menu resources
+	m_MenuTray.DestroyMenu();
+	m_MenuPopup.DestroyMenu();
+
 }
 
 
@@ -700,7 +759,7 @@ BOOL CVizNetGaugeDlg::GetStatsRefresher()
 		}
 	}
 
-	// First time through, get the handles.
+	// First time through, get the handles and names of interfaces.
 	if (m_bIsInitHandles)
 	{
 		if (FAILED(hr = apEnumAccess[0]->GetPropertyHandle(
@@ -725,23 +784,38 @@ BOOL CVizNetGaugeDlg::GetStatsRefresher()
 			goto CLEANUP;
 		}
 
+		for (i = 0; i < dwNumReturned; i++)
+		{
+			long nb = 0;
+			byte data[200];
+
+			if (FAILED(hr = apEnumAccess[i]->ReadPropertyValue(m_lInterfaceNameHandle, 200, &nb, data)))
+			{
+				goto CLEANUP;
+			}
+
+			//interface names
+			wstring wstr(reinterpret_cast<wchar_t*>(data), nb / sizeof(wchar_t));
+			CString sName(wstr.c_str());
+			m_sNetInterfaces[i] = sName;
+			m_uNetInterfaceCount++;
+		}
+
+		UpdateMenuInterfaceNames();
 		m_bIsInitHandles = FALSE;
 	}
-
-	m_uDownloadSpeed = 0;
-	m_uUploadSpeed = 0;
 
 	for (i = 0; i < dwNumReturned; i++)
 	{
 		long nb = 0;
-		byte data[200];
+		//byte data[200];
 		DWORD dwBytesRecdPerSec = 0;
 		DWORD dwBytesSentPerSec = 0;
 
-		if (FAILED(hr = apEnumAccess[i]->ReadPropertyValue(m_lInterfaceNameHandle, 200, &nb, data)))
-		{
-			goto CLEANUP;
-		}
+		//if (FAILED(hr = apEnumAccess[i]->ReadPropertyValue(m_lInterfaceNameHandle, 200, &nb, data)))
+		//{
+		//	goto CLEANUP;
+		//}
 		if (FAILED(hr = apEnumAccess[i]->ReadDWORD(m_lBytesReceivedPerSecHandle, &dwBytesRecdPerSec)))
 		{
 			goto CLEANUP;
@@ -752,9 +826,9 @@ BOOL CVizNetGaugeDlg::GetStatsRefresher()
 		}
 
 		//interface names
-		wstring wstr(reinterpret_cast<wchar_t*>(data), nb / sizeof(wchar_t));
-		CString sName(wstr.c_str());
-		m_sNetInterfaces[i] = sName;
+		//wstring wstr(reinterpret_cast<wchar_t*>(data), nb / sizeof(wchar_t));
+		//CString sName(wstr.c_str());
+		//m_sNetInterfaces[i] = sName;
 
 		//sample
 		InsertSample(i, dwBytesRecdPerSec, dwBytesSentPerSec);
@@ -852,3 +926,341 @@ void CVizNetGaugeDlg::InsertSample(int iInterface, DWORD dwDnValue, DWORD dwUpVa
 
 }
 
+//menu command handlers follow
+
+void CVizNetGaugeDlg::UpdateMenuInterfaceNames()
+{
+	MENUITEMINFO info;
+	info.cbSize = sizeof(MENUITEMINFO);
+	info.fMask = MIIM_ID;
+	for (int j = 0; j < m_uNetInterfaceCount; j++)
+	{
+		info.wID = 32808 + j;
+		m_MenuPopup.GetSubMenu(0)->GetSubMenu(3)->InsertMenuItem(j+2, &info, TRUE);
+		m_MenuPopup.ModifyMenuW(info.wID, MF_BYCOMMAND | MF_STRING, info.wID, m_sNetInterfaces[j]);
+	}
+
+}
+
+void CVizNetGaugeDlg::SetupMinimizeToTray()
+{
+	m_TrayData.cbSize = sizeof(NOTIFYICONDATA);
+	m_TrayData.hWnd = this->m_hWnd;
+	m_TrayData.uID = 1;
+	m_TrayData.uCallbackMessage = WM_TRAY_MESSAGE;
+	m_TrayData.hIcon = this->m_hIcon;
+
+	wcscpy_s(m_TrayData.szTip, _T("Clipboard Plus"));
+	m_TrayData.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+
+	BOOL bSuccess = m_MenuTray.LoadMenu(IDR_MENU_TRAY);
+	if (!(bSuccess))
+	{
+		MessageBox(_T("Unabled to load menu"), _T("Error"));
+	}
+
+	m_bMinimized = FALSE;
+}
+
+void CVizNetGaugeDlg::MinimizeToTray()
+{
+	BOOL bSuccess = Shell_NotifyIcon(NIM_ADD, &m_TrayData);
+	if (!(bSuccess))
+	{
+		MessageBox(_T("Unable to set tray icon"), _T("Error"));
+	}
+
+	this->ShowWindow(SW_MINIMIZE);
+	this->ShowWindow(SW_HIDE);
+
+	m_bMinimized = TRUE;
+
+}
+
+
+void CVizNetGaugeDlg::MaximizeFromTray()
+{
+	this->ShowWindow(SW_SHOW);
+	this->ShowWindow(SW_RESTORE);
+
+	Shell_NotifyIcon(NIM_DELETE, &m_TrayData);
+
+	m_bMinimized = FALSE;
+
+	SendMessage(WM_SYSCOMMAND, SC_RESTORE, 0); 
+	SetForegroundWindow();
+	SetActiveWindow();
+	SetWindowPos(0, 0, 0, 0, 0, SWP_SHOWWINDOW | SWP_NOMOVE | SWP_NOSIZE);
+	RedrawWindow(0, 0, RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN);
+
+}
+
+
+afx_msg LRESULT CVizNetGaugeDlg::OnTrayNotify(WPARAM wParam, LPARAM lParam)
+{
+	UINT uID;
+	UINT uMsg;
+	CPoint pt;
+
+	uID = (UINT)wParam;
+	uMsg = (UINT)lParam;
+
+	if (uID != 1)
+	{
+		return 0;
+	}
+
+	switch (uMsg)
+	{
+	case WM_LBUTTONDOWN:
+		GetCursorPos(&pt);
+		ClientToScreen(&pt);
+		OnTrayLButtonDown(pt);
+		break;
+
+	case WM_RBUTTONDOWN:
+
+	case WM_CONTEXTMENU:
+		GetCursorPos(&pt);
+		OnTrayRButtonDown(pt);
+		break;
+
+	}
+
+	return 0;
+}
+
+void CVizNetGaugeDlg::OnTrayLButtonDown(CPoint pt)
+{
+	MaximizeFromTray();
+}
+
+void CVizNetGaugeDlg::OnTrayRButtonDown(CPoint pt)
+{
+	m_MenuTray.GetSubMenu(0)->TrackPopupMenu(TPM_BOTTOMALIGN | TPM_LEFTBUTTON | TPM_RIGHTBUTTON, pt.x, pt.y, this);
+}
+
+
+void CVizNetGaugeDlg::OnContextMenu(CWnd* /*pWnd*/, CPoint point)
+{
+	CMenu *pSubMenu = m_MenuPopup.GetSubMenu(0);
+	ASSERT(pSubMenu);
+	pSubMenu->TrackPopupMenu(TPM_LEFTALIGN | TPM_RIGHTBUTTON, point.x, point.y, this);
+
+}
+
+
+void CVizNetGaugeDlg::OnOptionsAlwaysontop()
+{
+	m_bTopmostMode = !m_bTopmostMode;
+	m_MenuPopup.CheckMenuItem(ID_OPTIONS_ALWAYSONTOP, (MF_CHECKED * (UINT)m_bTopmostMode) | MF_BYCOMMAND);
+
+	if (m_bTopmostMode) SetWindowPos(&wndTopMost, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+	else SetWindowPos(&wndBottom, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+}
+
+
+void CVizNetGaugeDlg::OnOptionsMinimizetotray()
+{
+	MinimizeToTray();
+}
+
+
+void CVizNetGaugeDlg::OnTrayRestore()
+{
+	MaximizeFromTray();
+}
+
+
+void CVizNetGaugeDlg::OnTrayExit()
+{
+	CDialogEx::OnOK();
+}
+
+void CVizNetGaugeDlg::OnMenuExit()
+{
+	CDialogEx::OnOK();
+}
+
+
+void CVizNetGaugeDlg::OnUpdatespeedSlow()
+{
+	KillTimer(m_uTimer);
+	m_uTimerDelay = 5000; 
+	m_uTimer = SetTimer(VNG_TIMER, m_uTimerDelay, NULL);
+	m_MenuPopup.CheckMenuItem(ID_UPDATESPEED_SLOW,   (MF_CHECKED   | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_UPDATESPEED_MEDIUM, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_UPDATESPEED_FAST,   (MF_UNCHECKED | MF_BYCOMMAND));
+
+}
+
+
+void CVizNetGaugeDlg::OnUpdatespeedMedium()
+{
+	KillTimer(m_uTimer);
+	m_uTimerDelay = 1000;
+	m_uTimer = SetTimer(VNG_TIMER, m_uTimerDelay, NULL);
+	m_MenuPopup.CheckMenuItem(ID_UPDATESPEED_SLOW, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_UPDATESPEED_MEDIUM, (MF_CHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_UPDATESPEED_FAST, (MF_UNCHECKED | MF_BYCOMMAND));
+}
+
+
+void CVizNetGaugeDlg::OnUpdatespeedFast()
+{
+	KillTimer(m_uTimer);
+	m_uTimerDelay = 300;
+	m_uTimer = SetTimer(VNG_TIMER, m_uTimerDelay, NULL);
+	m_MenuPopup.CheckMenuItem(ID_UPDATESPEED_SLOW,   (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_UPDATESPEED_MEDIUM, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_UPDATESPEED_FAST,   (MF_CHECKED   | MF_BYCOMMAND));
+}
+
+
+void CVizNetGaugeDlg::OnUnitsBitspersec()
+{
+	m_uUnit = 1;
+	m_sUnitName = _T("Bps");
+	m_MenuPopup.CheckMenuItem(ID_UNITS_BITSPERSEC, (MF_CHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_UNITS_KILOBITSPERSEC, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_UNITS_MEGABITSPERSEC, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_UNITS_GIGABITSPERSEC, (MF_UNCHECKED | MF_BYCOMMAND));
+}
+
+
+void CVizNetGaugeDlg::OnUnitsKilobitspersec()
+{
+	m_uUnit = 1000;
+	m_sUnitName = _T("Kbps");
+	m_MenuPopup.CheckMenuItem(ID_UNITS_BITSPERSEC, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_UNITS_KILOBITSPERSEC, (MF_CHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_UNITS_MEGABITSPERSEC, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_UNITS_GIGABITSPERSEC, (MF_UNCHECKED | MF_BYCOMMAND));
+}
+
+
+void CVizNetGaugeDlg::OnUnitsMegabitspersec()
+{
+	m_uUnit = 1000000;
+	m_sUnitName = _T("Mbps");
+	m_MenuPopup.CheckMenuItem(ID_UNITS_BITSPERSEC, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_UNITS_KILOBITSPERSEC, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_UNITS_MEGABITSPERSEC, (MF_CHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_UNITS_GIGABITSPERSEC, (MF_UNCHECKED | MF_BYCOMMAND));
+}
+
+
+void CVizNetGaugeDlg::OnUnitsGigabitspersec()
+{
+	m_uUnit = 1000000000;
+	m_sUnitName = _T("Gbps");
+	m_MenuPopup.CheckMenuItem(ID_UNITS_BITSPERSEC, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_UNITS_KILOBITSPERSEC, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_UNITS_MEGABITSPERSEC, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_UNITS_GIGABITSPERSEC, (MF_CHECKED | MF_BYCOMMAND));
+}
+
+
+void CVizNetGaugeDlg::OnAveraging10samples()
+{
+	m_fAveragingIntervel = 10.0f;
+	m_MenuPopup.CheckMenuItem(ID_AVERAGING_10SAMPLES, (MF_CHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_AVERAGING_30SAMPLES, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_AVERAGING_60SAMPLES, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_AVERAGING_INSTANTANEOUS, (MF_UNCHECKED | MF_BYCOMMAND));
+}
+
+
+void CVizNetGaugeDlg::OnAveraging30sample()
+{
+	m_fAveragingIntervel = 30.0f;
+	m_MenuPopup.CheckMenuItem(ID_AVERAGING_10SAMPLES, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_AVERAGING_30SAMPLES, (MF_CHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_AVERAGING_60SAMPLES, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_AVERAGING_INSTANTANEOUS, (MF_UNCHECKED | MF_BYCOMMAND));
+}
+
+
+void CVizNetGaugeDlg::OnAveraging60samples()
+{
+	m_fAveragingIntervel = 60.0f;
+	m_MenuPopup.CheckMenuItem(ID_AVERAGING_10SAMPLES, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_AVERAGING_30SAMPLES, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_AVERAGING_60SAMPLES, (MF_CHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_AVERAGING_INSTANTANEOUS, (MF_UNCHECKED | MF_BYCOMMAND));
+}
+
+
+void CVizNetGaugeDlg::OnAveragingInstantaneous()
+{
+	m_fAveragingIntervel = 1.0f;
+	m_MenuPopup.CheckMenuItem(ID_AVERAGING_10SAMPLES, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_AVERAGING_30SAMPLES, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_AVERAGING_60SAMPLES, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_AVERAGING_INSTANTANEOUS, (MF_CHECKED | MF_BYCOMMAND));
+}
+
+
+void CVizNetGaugeDlg::OnThemesAquapale()
+{
+	m_crBarDn = RGB(20, 200, 200);
+	m_crBarUp = RGB(200, 200, 150);
+	m_crBackground = RGB(m_uBkIntensity, m_uBkIntensity, m_uBkIntensity);
+	m_MenuPopup.CheckMenuItem(ID_THEMES_AQUAPALE, (MF_CHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_THEMES_REDORANGE, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_THEMES_BLUEGREEN, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_THEMES_GREYWHITE, (MF_UNCHECKED | MF_BYCOMMAND));
+}
+
+
+void CVizNetGaugeDlg::OnThemesRedorange()
+{
+	m_crBarDn = RGB(180, 40, 40);
+	m_crBarUp = RGB(190, 120, 50);
+	m_crBackground = RGB(m_uBkIntensity+5, m_uBkIntensity-2, m_uBkIntensity-2);
+	m_MenuPopup.CheckMenuItem(ID_THEMES_AQUAPALE, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_THEMES_REDORANGE, (MF_CHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_THEMES_BLUEGREEN, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_THEMES_GREYWHITE, (MF_UNCHECKED | MF_BYCOMMAND));
+}
+
+
+void CVizNetGaugeDlg::OnThemesBluegreen()
+{
+	m_crBarDn = RGB(60, 160, 220);
+	m_crBarUp = RGB(60, 180, 80);
+	m_crBackground = RGB(m_uBkIntensity-5, m_uBkIntensity+2, m_uBkIntensity-5);
+	m_MenuPopup.CheckMenuItem(ID_THEMES_AQUAPALE, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_THEMES_REDORANGE, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_THEMES_BLUEGREEN, (MF_CHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_THEMES_GREYWHITE, (MF_UNCHECKED | MF_BYCOMMAND));
+}
+
+
+void CVizNetGaugeDlg::OnThemesGreywhite()
+{
+	m_crBarDn = RGB(230, 230, 230);
+	m_crBarUp = RGB(30, 30, 30);
+	m_crBackground = RGB(m_uBkIntensity+7, m_uBkIntensity + 7, m_uBkIntensity + 7);
+	m_MenuPopup.CheckMenuItem(ID_THEMES_AQUAPALE, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_THEMES_REDORANGE, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_THEMES_BLUEGREEN, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_MenuPopup.CheckMenuItem(ID_THEMES_GREYWHITE, (MF_CHECKED | MF_BYCOMMAND));
+}
+
+
+void CVizNetGaugeDlg::OnInterfacesNif1()
+{
+}
+
+
+void CVizNetGaugeDlg::OnUpdateInterfacesNif1(CCmdUI *pCmdUI)
+{
+	pCmdUI->SetCheck();
+}
+
+void CVizNetGaugeDlg::OnCommandRangeInterfaces(UINT nID)
+{
+	m_MenuPopup.CheckMenuItem(nID, (MF_CHECKED | MF_BYCOMMAND));
+
+}
