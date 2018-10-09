@@ -12,8 +12,9 @@ using namespace std;
 
 #pragma comment(lib, "wbemuuid.lib")
 
-#define VNG_TIMER WM_USER + 200
-
+#define VNG_TIMER			WM_USER + 200
+#define VNG_MAX_INTERFACES	16
+#define VNG_MAX_SAMPLES		256
 
 
 // CVizNetGaugeDlg dialog
@@ -28,16 +29,41 @@ public:
 	BOOL m_bIsUpload;
 	UINT m_uValueFontSize, m_uTextFontSize;
 	CString m_sFont;
-	UINT m_uDownloadSpeed, m_uUploadSpeed;
 	UINT m_uBkIntensity, m_uGridIntensityMin, m_uGridIntensityMaj, m_uGridSpacing;
 	COLORREF m_crBarDn, m_crBarUp;
 	UINT m_uWinSzMin, m_uWinSzMax;
 	UINT m_uBarCount, m_uBarWidth, m_uBarHeight, m_uBarSpacing;
 	UINT m_uTextIntensityTitle, m_uTextIntensityValue;
 
-	IWbemRefresher *pRefresher;// = NULL;
-	IWbemHiPerfEnum *pEnum;// = NULL;
+	IWbemRefresher			*pRefresher;
+	IWbemHiPerfEnum			*pEnum;
+	IWbemConfigureRefresher *pConfig;
+	IWbemServices           *pNameSpace;
+	IWbemLocator            *pWbemLocator;
+	HRESULT					m_hrResult;
+	BOOL					m_bIsInitHandles;
+	CIMTYPE					m_lInterfaceNameType;
+	CIMTYPE					m_lBytesReceivedPerSecType;
+	CIMTYPE					m_lBytesSentPerSecType;
+	LONG					m_lInterfaceNameHandle;
+	LONG					m_lBytesReceivedPerSecHandle;
+	LONG					m_lBytesSentPerSecHandle;
 
+	UINT m_uDownloadSamples[VNG_MAX_INTERFACES][VNG_MAX_SAMPLES];
+	UINT m_uUploadSamples[VNG_MAX_INTERFACES][VNG_MAX_SAMPLES];
+	CString m_sNetInterfaces[VNG_MAX_INTERFACES];
+	float m_fAveragingIntervel;
+	float m_fAverageDownloadSpeed[VNG_MAX_INTERFACES];
+	float m_fAverageUploadSpeed[VNG_MAX_INTERFACES];
+	UINT m_uDownloadSpeed;
+	UINT m_uUploadSpeed;
+	UINT m_uSampleCount;
+	UINT m_uMaxValue;
+
+	UINT m_uUnit;
+	CString m_sUnitName;
+	UINT m_uSelectedInterface;
+	CString m_sSelectedInterfaceName;
 
 	void InitDraw();
 	void Plot();
@@ -49,10 +75,14 @@ public:
 	void DrawSpeedText(CDC * pDC, CRect clRect);
 	void DrawInfoText(CDC * pDC, CRect clRect);
 	void DrawVignette(CDC * pDC, CRect clRect);
+	float GetScaleRatio();
 
 	BOOL InitWMI();
-	BOOL GetStats();
 	BOOL GetStatsRefresher();
+	void WMICleanup();
+
+	void InitSamples();
+	void InsertSample(int iInterface, DWORD dwDnValue, DWORD dwUpValue);
 
 
 // Dialog Data

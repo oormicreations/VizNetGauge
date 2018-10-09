@@ -60,6 +60,7 @@ BOOL CVizNetGaugeDlg::OnInitDialog()
 	m_uVMaj = 1;
 	m_uVMin = 0;
 
+	InitSamples();
 	InitDraw();
 	InitWMI();
 
@@ -103,6 +104,25 @@ HCURSOR CVizNetGaugeDlg::OnQueryDragIcon()
 	return static_cast<HCURSOR>(m_hIcon);
 }
 
+void CVizNetGaugeDlg::InitSamples()
+{
+	for (int i = 0; i < VNG_MAX_INTERFACES; i++)
+	{
+		for (int j = 0; j < VNG_MAX_SAMPLES; j++)
+		{
+			m_uDownloadSamples[i][j] = 0;
+			m_uUploadSamples[i][j] = 0;
+		}
+	}
+
+	m_fAveragingIntervel = 10.0f; //10sec for 1Hz update rate
+	m_uUnit = 1000; //kbps
+	m_sUnitName = _T("Kbps");
+	m_uSelectedInterface = 1; 
+	m_uMaxValue = 0;
+
+}
+
 void CVizNetGaugeDlg::InitDraw()
 {
 	m_bIsUpload = FALSE;
@@ -129,7 +149,7 @@ void CVizNetGaugeDlg::InitDraw()
 	m_sFont = _T("Calibri");
 
 	//Plot();
-	m_uTimerDelay = 1000;
+	m_uTimerDelay = 1000; //1 Hz
 	m_uTimer = SetTimer(VNG_TIMER, m_uTimerDelay, NULL);
 
 }
@@ -180,7 +200,7 @@ void CVizNetGaugeDlg::PaintGauge()
 	DrawSpeedText(dcMem, rClient);
 
 	//Vignette
-	DrawVignette(dcMem, rClient);
+	//DrawVignette(dcMem, rClient);
 
 	//render
 	int iYpos = (m_bIsUpload)*rClient.bottom;
@@ -246,24 +266,47 @@ void CVizNetGaugeDlg::DrawGrid(CDC * pDC, CRect clRect, BOOL bMajor)
 void CVizNetGaugeDlg::DrawBars(CDC * pDC, CRect clRect)
 {
 	CRect rBar;
-	COLORREF crBar = m_crBarDn;
-	int iMaxBarHeight = clRect.Height()/2;
+	UINT uMaxBarHeight = (UINT)clRect.Height()/2;
 	int iBarVOffset = 1;
 	int iXpos = 0;
+	UINT uMax = 0;
 
 	if (m_bIsUpload)
 	{
-		crBar = m_crBarUp;
-	}
+		//normalize
+		for (UINT i = 0; i < VNG_MAX_SAMPLES; i++)
+		{
+			if (m_uUploadSamples[m_uSelectedInterface][i] > uMax)uMax = m_uUploadSamples[m_uSelectedInterface][i];
+		}
+		if (uMax < 1)return;
 
-	for (UINT i = 0; i < m_uBarCount; i++)
+		for (UINT i = 0; i < VNG_MAX_SAMPLES; i++)
+		{
+			m_uBarHeight = (uMaxBarHeight * m_uUploadSamples[m_uSelectedInterface][i]) / uMax;
+			rBar.SetRect(0 + iXpos, clRect.Height() - m_uBarHeight - iBarVOffset, m_uBarWidth + iXpos, clRect.Height() - iBarVOffset);
+			pDC->FillSolidRect(rBar, m_crBarUp);
+			iXpos = iXpos + m_uBarSpacing + m_uBarWidth;
+		}
+	}
+	else
 	{
-		m_uBarHeight = rand() % iMaxBarHeight;
-		rBar.SetRect(0 + iXpos, clRect.Height() - m_uBarHeight - iBarVOffset, m_uBarWidth + iXpos, clRect.Height() - iBarVOffset);
-		pDC->FillSolidRect(rBar, crBar);
-		iXpos = iXpos + m_uBarSpacing + m_uBarWidth;
+		//normalize
+		for (UINT i = 0; i < VNG_MAX_SAMPLES; i++)
+		{
+			if (m_uDownloadSamples[m_uSelectedInterface][i] > uMax)uMax = m_uDownloadSamples[m_uSelectedInterface][i];
+		}
+		if (uMax < 1)return;
+
+		for (UINT i = 0; i < VNG_MAX_SAMPLES; i++)
+		{
+			m_uBarHeight = (uMaxBarHeight * m_uDownloadSamples[m_uSelectedInterface][i]) / uMax;
+			rBar.SetRect(0 + iXpos, clRect.Height() - m_uBarHeight - iBarVOffset, m_uBarWidth + iXpos, clRect.Height() - iBarVOffset);
+			pDC->FillSolidRect(rBar, m_crBarDn);
+			iXpos = iXpos + m_uBarSpacing + m_uBarWidth;
+		}
 	}
 
+	m_uMaxValue = (8 * uMax) / m_uUnit;
 }
 
 void CVizNetGaugeDlg::DrawTextBackground(CDC * pDC, CRect clRect)
@@ -294,17 +337,8 @@ void CVizNetGaugeDlg::DrawInfoText(CDC * pDC, CRect clRect)
 	if ((clRect.Width() < 200) || (clRect.Height() < 100))return;
 
 	CRect rText;
-	rText.left = clRect.right /2;
-	rText.top = clRect.bottom/6;
-	rText.right = clRect.right - 30;
-	rText.bottom = clRect.bottom;
-
-	int iFontSzScale = 1 + ((clRect.Width() * clRect.Height()) / (400*400));
-	COLORREF crText = RGB(m_uTextIntensityTitle, m_uTextIntensityTitle, m_uTextIntensityTitle);
-
 	CString sValue;
-	sValue = _T("RealTek Ethernet\r\nDownload\r\nKbps");
-	if (m_bIsUpload) sValue.Replace(_T("Download"), _T("Upload"));
+	COLORREF crText = RGB(m_uTextIntensityTitle, m_uTextIntensityTitle, m_uTextIntensityTitle);
 
 	DRAWTEXTPARAMS dtParams;
 	dtParams.cbSize = sizeof(DRAWTEXTPARAMS);
@@ -313,12 +347,38 @@ void CVizNetGaugeDlg::DrawInfoText(CDC * pDC, CRect clRect)
 	dtParams.iTabLength = 1;
 
 	CFont fValue;
-	fValue.CreatePointFont((int)(m_uTextFontSize * 10 * iFontSzScale), m_sFont);
+	fValue.CreatePointFont((int)(m_uTextFontSize * 10 * GetScaleRatio() * 0.8f), m_sFont);
 
 	CFont * oldFont2 = pDC->SelectObject(&fValue);
 	pDC->SetBkMode(TRANSPARENT);
 	pDC->SetTextColor(crText);
-	pDC->DrawTextEx(sValue.GetBuffer(), -1, rText, DT_RIGHT|DT_WORDBREAK, &dtParams);
+
+	if (!m_bIsUpload)
+	{
+		rText.SetRect(20, 15, clRect.right / 2, clRect.bottom);
+		sValue = m_sNetInterfaces[m_uSelectedInterface];
+		pDC->DrawTextEx(sValue.GetBuffer(), -1, rText, DT_LEFT | DT_WORDBREAK, &dtParams);
+	}
+
+	sValue = _T("Download | ") + m_sUnitName;
+	if (m_bIsUpload) sValue = _T("Upload | ") + m_sUnitName;
+	else sValue = _T("Download | ") + m_sUnitName;
+
+	rText.SetRect(clRect.right / 2, 0, clRect.right-20, clRect.bottom/2-2);
+	pDC->DrawTextEx(sValue.GetBuffer(), -1, rText, DT_RIGHT| DT_BOTTOM | DT_SINGLELINE, &dtParams);
+
+	//display peak level and mid line
+	sValue.Format(_T("Peak %d Kbps"), m_uMaxValue);
+	for (int x = 0; x < clRect.right; x = x + 6)
+	{
+		pDC->SetPixel(x, clRect.bottom / 2, RGB(120, 120, 120));
+		pDC->SetPixel(x, clRect.bottom-1, RGB(120, 120, 120));
+		//pDC->SetPixel(x, clRect.top+3, RGB(120, 120, 120));
+	}
+
+	rText.SetRect(20, 0, clRect.right/2, (clRect.bottom / 2) -2);
+	pDC->DrawTextEx(sValue.GetBuffer(), -1, rText, DT_LEFT | DT_BOTTOM | DT_SINGLELINE, &dtParams);
+
 
 	pDC->SelectObject(oldFont2);
 	fValue.DeleteObject();
@@ -329,15 +389,14 @@ void CVizNetGaugeDlg::DrawSpeedText(CDC * pDC, CRect clRect)
 	CRect rText;
 	rText.left = clRect.left;
 	rText.top = clRect.top;
-	rText.right = clRect.right/2;
+	rText.right = clRect.right-20;
 	rText.bottom = clRect.bottom/2;
 
-	int iFontSzScale = 1 + ((clRect.Width() * clRect.Height()) / (300 * 300));
 	COLORREF crValue = RGB(m_uTextIntensityValue, m_uTextIntensityValue, m_uTextIntensityValue);
 
 	CString sValue;
-	//m_uDownloadSpeed = rand() % 15000;
-	sValue.Format(_T("%d"), m_uDownloadSpeed);
+	if(m_bIsUpload) sValue.Format(_T("%.2f"), m_fAverageUploadSpeed[m_uSelectedInterface]);
+	else sValue.Format(_T("%.2f"), m_fAverageDownloadSpeed[m_uSelectedInterface]);
 
 	DRAWTEXTPARAMS dtParams;
 	dtParams.cbSize = sizeof(DRAWTEXTPARAMS);
@@ -346,12 +405,12 @@ void CVizNetGaugeDlg::DrawSpeedText(CDC * pDC, CRect clRect)
 	dtParams.iTabLength = 1;
 
 	CFont fValue;
-	fValue.CreatePointFont((int)(m_uValueFontSize * 10 * iFontSzScale), m_sFont);
+	fValue.CreatePointFont((int)(m_uValueFontSize * 10 * GetScaleRatio()), m_sFont);
 
 	CFont * oldFont2 = pDC->SelectObject(&fValue);
 	pDC->SetBkMode(TRANSPARENT);
 	pDC->SetTextColor(crValue);
-	pDC->DrawTextEx(sValue.GetBuffer(), -1, rText, DT_CENTER | DT_VCENTER | DT_SINGLELINE, &dtParams);
+	pDC->DrawTextEx(sValue.GetBuffer(), -1, rText, DT_RIGHT | DT_VCENTER | DT_SINGLELINE, &dtParams);
 
 	pDC->SelectObject(oldFont2);
 	fValue.DeleteObject();
@@ -359,8 +418,8 @@ void CVizNetGaugeDlg::DrawSpeedText(CDC * pDC, CRect clRect)
 
 void CVizNetGaugeDlg::DrawVignette(CDC * pDC, CRect clRect)
 {
-	int iVigWidth = 20 * clRect.Width()/m_uWinSzMax;
-	float fMaxAtten = 1.0f;
+	int iVigWidth = 30 * clRect.Width()/m_uWinSzMax;
+	float fMaxAtten = 0.25f;
 
 	for (int x = 0; x < iVigWidth; x++)
 	{
@@ -405,6 +464,15 @@ void CVizNetGaugeDlg::DrawVignette(CDC * pDC, CRect clRect)
 
 }
 
+float CVizNetGaugeDlg::GetScaleRatio()
+{
+	CRect rClient;
+	GetClientRect(&rClient);
+
+	return 1 + (1.5f * (float)rClient.Width() * (float)rClient.Height()) / (float)(m_uWinSzMax * m_uWinSzMax);
+
+}
+
 void CVizNetGaugeDlg::OnTimer(UINT_PTR nIDEvent)
 {
 	if (nIDEvent == m_uTimer)
@@ -420,6 +488,7 @@ void CVizNetGaugeDlg::OnDestroy()
 {
 	CDialogEx::OnDestroy();
 	KillTimer(m_uTimer);
+	WMICleanup();
 }
 
 
@@ -457,40 +526,34 @@ void CVizNetGaugeDlg::OnExitSizeMove()
 	CDialogEx::OnExitSizeMove();
 }
 
+//WMI functions follow
+
 //WMI Ref: 
 //https://msdn.microsoft.com/en-us/library/windows/desktop/aa394293.aspx
 //https://docs.microsoft.com/en-us/windows/desktop/WmiSdk/example-creating-a-wmi-application
 //https://docs.microsoft.com/en-us/windows/desktop/WmiSdk/accessing-performance-data-in-c--
+//Run %windir%\system32\wbem\wbemtest.exe
 
 BOOL CVizNetGaugeDlg::InitWMI()
 {
-	// To add error checking,
-	// check returned HRESULT below where collected.
-	HRESULT                 hr = S_OK;
-	/*IWbemRefresher          **/pRefresher = NULL;
-	IWbemConfigureRefresher *pConfig = NULL;
-	/*IWbemHiPerfEnum         **/pEnum = NULL;
-	IWbemServices           *pNameSpace = NULL;
-	IWbemLocator            *pWbemLocator = NULL;
-	//IWbemObjectAccess       **apEnumAccess = NULL;
-	BSTR                    bstrNameSpace = NULL;
-	long                    lID = 0;
-	//long                    lVirtualBytesHandle = 0;
-	//long                    lIDProcessHandle = 0;
-	//DWORD                   dwVirtualBytes = 0;
-	//DWORD                   dwProcessId = 0;
-	//DWORD                   dwNumObjects = 0;
-	//DWORD                   dwNumReturned = 0;
-	//DWORD                   dwIDProcess = 0;
-	//DWORD                   i = 0;
-	//int                     x = 0;
+	pRefresher = NULL;
+	pEnum = NULL;
+	pConfig = NULL;
+	pNameSpace = NULL;
+	pWbemLocator = NULL;
+	m_hrResult = S_OK;
+	m_bIsInitHandles = TRUE;
 
-	if (FAILED(hr = CoInitializeEx(NULL, COINIT_MULTITHREADED)))
+	BSTR bstrNameSpace = NULL;
+	long lID = 0;
+
+	if (FAILED(m_hrResult = CoInitializeEx(NULL, COINIT_MULTITHREADED)))
 	{
-		goto CLEANUP;
+		WMICleanup();
+		return 1;
 	}
 
-	if (FAILED(hr = CoInitializeSecurity(
+	if (FAILED(m_hrResult = CoInitializeSecurity(
 		NULL,
 		-1,
 		NULL,
@@ -499,27 +562,30 @@ BOOL CVizNetGaugeDlg::InitWMI()
 		RPC_C_IMP_LEVEL_IMPERSONATE,
 		NULL, EOAC_NONE, 0)))
 	{
-		goto CLEANUP;
+		WMICleanup();
+		return 1;
 	}
 
-	if (FAILED(hr = CoCreateInstance(
+	if (FAILED(m_hrResult = CoCreateInstance(
 		CLSID_WbemLocator,
 		NULL,
 		CLSCTX_INPROC_SERVER,
 		IID_IWbemLocator,
 		(void**)&pWbemLocator)))
 	{
-		goto CLEANUP;
+		WMICleanup();
+		return 1;
 	}
 
 	// Connect to the desired namespace.
 	bstrNameSpace = SysAllocString(L"\\\\.\\root\\cimv2");
 	if (NULL == bstrNameSpace)
 	{
-		hr = E_OUTOFMEMORY;
-		goto CLEANUP;
+		m_hrResult = E_OUTOFMEMORY;
+		WMICleanup();
+		return 1;
 	}
-	if (FAILED(hr = pWbemLocator->ConnectServer(
+	if (FAILED(m_hrResult = pWbemLocator->ConnectServer(
 		bstrNameSpace,
 		NULL, // User name
 		NULL, // Password
@@ -529,32 +595,35 @@ BOOL CVizNetGaugeDlg::InitWMI()
 		NULL, // Wbem context
 		&pNameSpace)))
 	{
-		goto CLEANUP;
+		WMICleanup();
+		return 1;
 	}
 	pWbemLocator->Release();
 	pWbemLocator = NULL;
 	SysFreeString(bstrNameSpace);
 	bstrNameSpace = NULL;
 
-	if (FAILED(hr = CoCreateInstance(
+	if (FAILED(m_hrResult = CoCreateInstance(
 		CLSID_WbemRefresher,
 		NULL,
 		CLSCTX_INPROC_SERVER,
 		IID_IWbemRefresher,
 		(void**)&pRefresher)))
 	{
-		goto CLEANUP;
+		WMICleanup();
+		return 1;
 	}
 
-	if (FAILED(hr = pRefresher->QueryInterface(
+	if (FAILED(m_hrResult = pRefresher->QueryInterface(
 		IID_IWbemConfigureRefresher,
 		(void **)&pConfig)))
 	{
-		goto CLEANUP;
+		WMICleanup();
+		return 1;
 	}
 
 	// Add an enumerator to the refresher.
-	if (FAILED(hr = pConfig->AddEnum(
+	if (FAILED(m_hrResult = pConfig->AddEnum(
 		pNameSpace,
 //		L"Win32_PerfRawData_PerfProc_Process",
 		L"Win32_PerfFormattedData_Tcpip_NetworkInterface",
@@ -563,198 +632,24 @@ BOOL CVizNetGaugeDlg::InitWMI()
 		&pEnum,
 		&lID)))
 	{
-		goto CLEANUP;
+		WMICleanup();
+		return 1;
 	}
 	pConfig->Release();
 	pConfig = NULL;
-
-	//// Get a property handle for the VirtualBytes property.
-
-	//// Refresh the object ten times and retrieve the value.
-	//for (x = 0; x < 10; x++)
-	//{
-	//	dwNumReturned = 0;
-	//	dwIDProcess = 0;
-	//	dwNumObjects = 0;
-
-	//	if (FAILED(hr = pRefresher->Refresh(0L)))
-	//	{
-	//		goto CLEANUP;
-	//	}
-
-	//	hr = pEnum->GetObjects(0L,
-	//		dwNumObjects,
-	//		apEnumAccess,
-	//		&dwNumReturned);
-	//	// If the buffer was not big enough,
-	//	// allocate a bigger buffer and retry.
-	//	if (hr == WBEM_E_BUFFER_TOO_SMALL
-	//		&& dwNumReturned > dwNumObjects)
-	//	{
-	//		apEnumAccess = new IWbemObjectAccess*[dwNumReturned];
-	//		if (NULL == apEnumAccess)
-	//		{
-	//			hr = E_OUTOFMEMORY;
-	//			goto CLEANUP;
-	//		}
-	//		SecureZeroMemory(apEnumAccess,
-	//			dwNumReturned * sizeof(IWbemObjectAccess*));
-	//		dwNumObjects = dwNumReturned;
-
-	//		if (FAILED(hr = pEnum->GetObjects(0L,
-	//			dwNumObjects,
-	//			apEnumAccess,
-	//			&dwNumReturned)))
-	//		{
-	//			goto CLEANUP;
-	//		}
-	//	}
-	//	else
-	//	{
-	//		if (hr == WBEM_S_NO_ERROR)
-	//		{
-	//			hr = WBEM_E_NOT_FOUND;
-	//			goto CLEANUP;
-	//		}
-	//	}
-
-	//	// First time through, get the handles.
-	//	if (0 == x)
-	//	{
-	//		CIMTYPE VirtualBytesType;
-	//		CIMTYPE ProcessHandleType;
-	//		if (FAILED(hr = apEnumAccess[0]->GetPropertyHandle(
-	//			L"Name",
-	//			&VirtualBytesType,
-	//			&lVirtualBytesHandle)))
-	//		{
-	//			goto CLEANUP;
-	//		}
-	//		if (FAILED(hr = apEnumAccess[0]->GetPropertyHandle(
-	//			L"BytesReceivedPerSec",
-	//			&ProcessHandleType,
-	//			&lIDProcessHandle)))
-	//		{
-	//			goto CLEANUP;
-	//		}
-
-	//		int t = 0;
-	//	}
-
-	//	m_uDownloadSpeed = 0;
-	//	for (i = 0; i < dwNumReturned; i++)
-	//	{
-	//		long nb = 0;
-	//		byte data[200];
-	//		DWORD dwBytesRecPerSec = 0;
-
-	//		//hr = apEnumAccess[i]->ReadPropertyValue(lVirtualBytesHandle, 200, &nb, data);
-	//		//wstring wstr(reinterpret_cast<wchar_t*>(data), nb / sizeof(wchar_t));
-	//		//CString d(wstr.c_str());
-
-	//		if (FAILED(hr = apEnumAccess[i]->ReadPropertyValue(lVirtualBytesHandle, 200, &nb, data)))
-	//		{
-	//			goto CLEANUP;
-	//		}
-	//		if (FAILED(hr = apEnumAccess[i]->ReadDWORD(lIDProcessHandle,&dwBytesRecPerSec)))
-	//		{
-	//			goto CLEANUP;
-	//		}
-
-	//		wstring wstr(reinterpret_cast<wchar_t*>(data), nb / sizeof(wchar_t));
-	//		CString sName(wstr.c_str());
-
-	//		m_uDownloadSpeed += dwBytesRecPerSec; //total from all network interfaces
-
-	//		//if (FAILED(hr = apEnumAccess[i]->ReadDWORD(
-	//		//	lVirtualBytesHandle,
-	//		//	&dwVirtualBytes)))
-	//		//{
-	//		//	goto CLEANUP;
-	//		//}
-	//		//if (FAILED(hr = apEnumAccess[i]->ReadDWORD(
-	//		//	lIDProcessHandle,
-	//		//	&dwIDProcess)))
-	//		//{
-	//		//	goto CLEANUP;
-	//		//}
-	//		//TRACE(L"Process ID %lu is using %lu bytes\n",
-	//		//	dwIDProcess, dwVirtualBytes);
-	//		//wprintf(L"Process ID %lu is using %lu bytes\n",
-	//		//	dwIDProcess, dwVirtualBytes);
-
-	//		// Done with the object
-	//		apEnumAccess[i]->Release();
-	//		apEnumAccess[i] = NULL;
-	//	}
-
-	//	if (NULL != apEnumAccess)
-	//	{
-	//		delete[] apEnumAccess;
-	//		apEnumAccess = NULL;
-	//	}
-
-	//	// Sleep for a second.
-	//	Sleep(1000);
-	//}
-	//// exit loop here
-CLEANUP:
 
 	if (NULL != bstrNameSpace)
 	{
 		SysFreeString(bstrNameSpace);
 	}
 
-	//if (NULL != apEnumAccess)
-	//{
-	//	for (i = 0; i < dwNumReturned; i++)
-	//	{
-	//		if (apEnumAccess[i] != NULL)
-	//		{
-	//			apEnumAccess[i]->Release();
-	//			apEnumAccess[i] = NULL;
-	//		}
-	//	}
-	//	delete[] apEnumAccess;
-	//}
 
-
-	//if (NULL != pWbemLocator)
-	//{
-	//	pWbemLocator->Release();
-	//}
-	//if (NULL != pNameSpace)
-	//{
-	//	pNameSpace->Release();
-	//}
-	//if (NULL != pEnum)
-	//{
-	//	pEnum->Release();
-	//}
-	//if (NULL != pConfig)
-	//{
-	//	pConfig->Release();
-	//}
-	//if (NULL != pRefresher)
-	//{
-	//	pRefresher->Release();
-	//}
-
-	//CoUninitialize();
-
-	if (FAILED(hr))
-	{
-		wprintf(L"Error status=%08x\n", hr);
-	}
-
-	return 1;
+	return 0;
 }
 
 BOOL CVizNetGaugeDlg::GetStatsRefresher()
 {
 	HRESULT                 hr = S_OK;
-	long                    lVirtualBytesHandle = 0;
-	long                    lIDProcessHandle = 0;
 	DWORD                   dwVirtualBytes = 0;
 	DWORD                   dwProcessId = 0;
 	DWORD                   dwNumObjects = 0;
@@ -764,341 +659,196 @@ BOOL CVizNetGaugeDlg::GetStatsRefresher()
 	int                     x = 0;
 	IWbemObjectAccess       **apEnumAccess = NULL;
 
+	dwNumReturned = 0;
+	dwIDProcess = 0;
+	dwNumObjects = 0;
 
+	if (FAILED(hr = pRefresher->Refresh(0L)))
+	{
+		goto CLEANUP;
+	}
 
-	// Get a property handle for the VirtualBytes property.
+	hr = pEnum->GetObjects(0L, dwNumObjects, apEnumAccess, &dwNumReturned);
 
-	// Refresh the object ten times and retrieve the value.
-	//for (x = 0; x < 10; x++)
-	//{
-		dwNumReturned = 0;
-		dwIDProcess = 0;
-		dwNumObjects = 0;
+	// If the buffer was not big enough, allocate a bigger buffer and retry.
+	if (hr == WBEM_E_BUFFER_TOO_SMALL && dwNumReturned > dwNumObjects)
+	{
+		apEnumAccess = new IWbemObjectAccess*[dwNumReturned];
+		if (NULL == apEnumAccess)
+		{
+			hr = E_OUTOFMEMORY;
+			goto CLEANUP;
+		}
+		SecureZeroMemory(apEnumAccess,
+			dwNumReturned * sizeof(IWbemObjectAccess*));
+		dwNumObjects = dwNumReturned;
 
-		if (FAILED(hr = pRefresher->Refresh(0L)))
+		if (FAILED(hr = pEnum->GetObjects(0L,
+			dwNumObjects,
+			apEnumAccess,
+			&dwNumReturned)))
+		{
+			goto CLEANUP;
+		}
+	}
+	else
+	{
+		if (hr == WBEM_S_NO_ERROR)
+		{
+			hr = WBEM_E_NOT_FOUND;
+			goto CLEANUP;
+		}
+	}
+
+	// First time through, get the handles.
+	if (m_bIsInitHandles)
+	{
+		if (FAILED(hr = apEnumAccess[0]->GetPropertyHandle(
+			L"Name",
+			&m_lInterfaceNameType,
+			&m_lInterfaceNameHandle)))
+		{
+			goto CLEANUP;
+		}
+		if (FAILED(hr = apEnumAccess[0]->GetPropertyHandle(
+			L"BytesReceivedPerSec",
+			&m_lBytesReceivedPerSecType,
+			&m_lBytesReceivedPerSecHandle)))
+		{
+			goto CLEANUP;
+		}
+		if (FAILED(hr = apEnumAccess[0]->GetPropertyHandle(
+			L"BytesSentPerSec",
+			&m_lBytesSentPerSecType,
+			&m_lBytesSentPerSecHandle)))
 		{
 			goto CLEANUP;
 		}
 
-		hr = pEnum->GetObjects(0L,
-			dwNumObjects,
-			apEnumAccess,
-			&dwNumReturned);
-		// If the buffer was not big enough,
-		// allocate a bigger buffer and retry.
-		if (hr == WBEM_E_BUFFER_TOO_SMALL
-			&& dwNumReturned > dwNumObjects)
-		{
-			apEnumAccess = new IWbemObjectAccess*[dwNumReturned];
-			if (NULL == apEnumAccess)
-			{
-				hr = E_OUTOFMEMORY;
-				goto CLEANUP;
-			}
-			SecureZeroMemory(apEnumAccess,
-				dwNumReturned * sizeof(IWbemObjectAccess*));
-			dwNumObjects = dwNumReturned;
-
-			if (FAILED(hr = pEnum->GetObjects(0L,
-				dwNumObjects,
-				apEnumAccess,
-				&dwNumReturned)))
-			{
-				goto CLEANUP;
-			}
-		}
-		else
-		{
-			if (hr == WBEM_S_NO_ERROR)
-			{
-				hr = WBEM_E_NOT_FOUND;
-				goto CLEANUP;
-			}
-		}
-
-		// First time through, get the handles.
-		if (0 == x)
-		{
-			CIMTYPE VirtualBytesType;
-			CIMTYPE ProcessHandleType;
-			if (FAILED(hr = apEnumAccess[0]->GetPropertyHandle(
-				L"Name",
-				&VirtualBytesType,
-				&lVirtualBytesHandle)))
-			{
-				goto CLEANUP;
-			}
-			if (FAILED(hr = apEnumAccess[0]->GetPropertyHandle(
-				L"BytesReceivedPerSec",
-				&ProcessHandleType,
-				&lIDProcessHandle)))
-			{
-				goto CLEANUP;
-			}
-
-			int t = 0;
-		}
-
-		m_uDownloadSpeed = 0;
-		for (i = 0; i < dwNumReturned; i++)
-		{
-			long nb = 0;
-			byte data[200];
-			DWORD dwBytesRecPerSec = 0;
-
-			//hr = apEnumAccess[i]->ReadPropertyValue(lVirtualBytesHandle, 200, &nb, data);
-			//wstring wstr(reinterpret_cast<wchar_t*>(data), nb / sizeof(wchar_t));
-			//CString d(wstr.c_str());
-
-			if (FAILED(hr = apEnumAccess[i]->ReadPropertyValue(lVirtualBytesHandle, 200, &nb, data)))
-			{
-				goto CLEANUP;
-			}
-			if (FAILED(hr = apEnumAccess[i]->ReadDWORD(lIDProcessHandle, &dwBytesRecPerSec)))
-			{
-				goto CLEANUP;
-			}
-
-			wstring wstr(reinterpret_cast<wchar_t*>(data), nb / sizeof(wchar_t));
-			CString sName(wstr.c_str());
-
-			m_uDownloadSpeed += dwBytesRecPerSec; //total from all network interfaces
-
-			//if (FAILED(hr = apEnumAccess[i]->ReadDWORD(
-			//	lVirtualBytesHandle,
-			//	&dwVirtualBytes)))
-			//{
-			//	goto CLEANUP;
-			//}
-			//if (FAILED(hr = apEnumAccess[i]->ReadDWORD(
-			//	lIDProcessHandle,
-			//	&dwIDProcess)))
-			//{
-			//	goto CLEANUP;
-			//}
-			//TRACE(L"Process ID %lu is using %lu bytes\n",
-			//	dwIDProcess, dwVirtualBytes);
-			//wprintf(L"Process ID %lu is using %lu bytes\n",
-			//	dwIDProcess, dwVirtualBytes);
-
-			// Done with the object
-			apEnumAccess[i]->Release();
-			apEnumAccess[i] = NULL;
-		}
-
-		if (NULL != apEnumAccess)
-		{
-			delete[] apEnumAccess;
-			apEnumAccess = NULL;
-		}
-
-		// Sleep for a second.
-	//	Sleep(1000);
-	//}
-	// exit loop here
-
-	CLEANUP:
-
-
-		if (NULL != apEnumAccess)
-		{
-			for (i = 0; i < dwNumReturned; i++)
-			{
-				if (apEnumAccess[i] != NULL)
-				{
-					apEnumAccess[i]->Release();
-					apEnumAccess[i] = NULL;
-				}
-			}
-			delete[] apEnumAccess;
-		}
-
-
-	return 0;
-}
-
-
-BOOL CVizNetGaugeDlg::GetStats()
-{
-	HRESULT hres;
-	IWbemServices *pSvc = NULL;
-
-	// Step 1: --------------------------------------------------
-	// Initialize COM. ------------------------------------------
-
-	hres = CoInitializeEx(0, COINIT_MULTITHREADED);
-	if (FAILED(hres))
-	{
-		//cout << "Failed to initialize COM library. Error code = 0x"
-		//	<< hex << hres << endl;
-		return 1;                  // Program has failed.
+		m_bIsInitHandles = FALSE;
 	}
-
-	// Step 2: --------------------------------------------------
-	// Set general COM security levels --------------------------
-
-	hres = CoInitializeSecurity(
-		NULL,
-		-1,                          // COM authentication
-		NULL,                        // Authentication services
-		NULL,                        // Reserved
-		RPC_C_AUTHN_LEVEL_DEFAULT,   // Default authentication 
-		RPC_C_IMP_LEVEL_IMPERSONATE, // Default Impersonation  
-		NULL,                        // Authentication info
-		EOAC_NONE,                   // Additional capabilities 
-		NULL                         // Reserved
-	);
-
-
-	if (FAILED(hres))
-	{
-		//cout << "Failed to initialize security. Error code = 0x"
-		//	<< hex << hres << endl;
-		CoUninitialize();
-		return 1;                    // Program has failed.
-	}
-
-
-
-	// Step 3: ---------------------------------------------------
-	// Obtain the initial locator to WMI -------------------------
-
-	IWbemLocator *pLoc = NULL;
-
-	hres = CoCreateInstance(
-		CLSID_WbemLocator,
-		0,
-		CLSCTX_INPROC_SERVER,
-		IID_IWbemLocator, (LPVOID *)&pLoc);
-
-	if (FAILED(hres))
-	{
-		//cout << "Failed to create IWbemLocator object."
-		//	<< " Err code = 0x"
-		//	<< hex << hres << endl;
-		CoUninitialize();
-		return 1;                 // Program has failed.
-	}
-
-	// Step 4: -----------------------------------------------------
-	// Connect to WMI through the IWbemLocator::ConnectServer method
-
-	pSvc = NULL;
-
-	// Connect to the root\cimv2 namespace with
-	// the current user and obtain pointer pSvc
-	// to make IWbemServices calls.
-	hres = pLoc->ConnectServer(
-		_bstr_t(L"ROOT\\CIMV2"), // Object path of WMI namespace
-		NULL,                    // User name. NULL = current user
-		NULL,                    // User password. NULL = current
-		0,                       // Locale. NULL indicates current
-		NULL,                    // Security flags.
-		0,                       // Authority (for example, Kerberos)
-		0,                       // Context object 
-		&pSvc                    // pointer to IWbemServices proxy
-	);
-
-	if (FAILED(hres))
-	{
-		//cout << "Could not connect. Error code = 0x"
-		//	<< hex << hres << endl;
-		pLoc->Release();
-		CoUninitialize();
-		return 1;                // Program has failed.
-	}
-
-	//cout << "Connected to ROOT\\CIMV2 WMI namespace" << endl;
-
-	// Step 5: --------------------------------------------------
-	// Set security levels on the proxy -------------------------
-
-	hres = CoSetProxyBlanket(
-		pSvc,                        // Indicates the proxy to set
-		RPC_C_AUTHN_WINNT,           // RPC_C_AUTHN_xxx
-		RPC_C_AUTHZ_NONE,            // RPC_C_AUTHZ_xxx
-		NULL,                        // Server principal name 
-		RPC_C_AUTHN_LEVEL_CALL,      // RPC_C_AUTHN_LEVEL_xxx 
-		RPC_C_IMP_LEVEL_IMPERSONATE, // RPC_C_IMP_LEVEL_xxx
-		NULL,                        // client identity
-		EOAC_NONE                    // proxy capabilities 
-	);
-
-	if (FAILED(hres))
-	{
-		//cout << "Could not set proxy blanket. Error code = 0x"
-		//	<< hex << hres << endl;
-		pSvc->Release();
-		//pLoc->Release();
-		CoUninitialize();
-		return 1;               // Program has failed.
-	}
-
-	// Step 6: --------------------------------------------------
-	// Use the IWbemServices pointer to make requests of WMI ----
-
-	// For example, get the name of the operating system
-	IEnumWbemClassObject* pEnumerator = NULL;
-	hres = pSvc->ExecQuery(
-		bstr_t("WQL"),
-		//bstr_t("SELECT * FROM Win32_OperatingSystem"),
-		bstr_t("SELECT * FROM Win32_PerfFormattedData_Tcpip_NetworkInterface"),
-		WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
-		NULL,
-		&pEnumerator);
-
-	if (FAILED(hres))
-	{
-		//cout << "Query for operating system name failed."
-		//	<< " Error code = 0x"
-		//	<< hex << hres << endl;
-		pSvc->Release();
-		//pLoc->Release();
-		CoUninitialize();
-		return 1;               // Program has failed.
-	}
-
-	// Step 7: -------------------------------------------------
-	// Get the data from the query in step 6 -------------------
-
-	IWbemClassObject *pclsObj = NULL;
-	ULONG uReturn = 0;
 
 	m_uDownloadSpeed = 0;
+	m_uUploadSpeed = 0;
 
-	while (pEnumerator)
+	for (i = 0; i < dwNumReturned; i++)
 	{
-		HRESULT hr = pEnumerator->Next(WBEM_INFINITE, 1, &pclsObj, &uReturn);
+		long nb = 0;
+		byte data[200];
+		DWORD dwBytesRecdPerSec = 0;
+		DWORD dwBytesSentPerSec = 0;
 
-		if (0 == uReturn)
+		if (FAILED(hr = apEnumAccess[i]->ReadPropertyValue(m_lInterfaceNameHandle, 200, &nb, data)))
 		{
-			break;
+			goto CLEANUP;
+		}
+		if (FAILED(hr = apEnumAccess[i]->ReadDWORD(m_lBytesReceivedPerSecHandle, &dwBytesRecdPerSec)))
+		{
+			goto CLEANUP;
+		}
+		if (FAILED(hr = apEnumAccess[i]->ReadDWORD(m_lBytesSentPerSecHandle, &dwBytesSentPerSec)))
+		{
+			goto CLEANUP;
 		}
 
-		VARIANT vtProp;
+		//interface names
+		wstring wstr(reinterpret_cast<wchar_t*>(data), nb / sizeof(wchar_t));
+		CString sName(wstr.c_str());
+		m_sNetInterfaces[i] = sName;
 
-		// Get the value of the Name property
-		hr = pclsObj->Get(L"Name", 0, &vtProp, 0, 0);
-		//wcout << "Name : " << vtProp.bstrVal << endl;
+		//sample
+		InsertSample(i, dwBytesRecdPerSec, dwBytesSentPerSec);
 
-		hr = pclsObj->Get(L"BytesTotalPerSec", 0, &vtProp, 0, 0);
-		//wcout << "BytesTotalPerSec : " << vtProp.bstrVal << endl;
-
-		BSTR b = vtProp.bstrVal;
-		m_uDownloadSpeed += _ttoi(b);
-
-		VariantClear(&vtProp);
-
-		pclsObj->Release();
+		// Done with the object
+		apEnumAccess[i]->Release();
+		apEnumAccess[i] = NULL;
 	}
 
-	// Cleanup
-	// ========
+	if (NULL != apEnumAccess)
+	{
+		delete[] apEnumAccess;
+		apEnumAccess = NULL;
+	}
 
-	//pSvc->Release();
-	//pLoc->Release();
-	pEnumerator->Release();
-	CoUninitialize();
+CLEANUP:
+
+	if (NULL != apEnumAccess)
+	{
+		for (i = 0; i < dwNumReturned; i++)
+		{
+			if (apEnumAccess[i] != NULL)
+			{
+				apEnumAccess[i]->Release();
+				apEnumAccess[i] = NULL;
+			}
+		}
+		delete[] apEnumAccess;
+	}
 
 	return 0;
 }
+
+void CVizNetGaugeDlg::WMICleanup()
+{
+	if (FAILED(m_hrResult))
+	{
+		CString sErr;
+		sErr.Format(L"Error: WMI failed. Status=%08x", m_hrResult);
+		AfxMessageBox(sErr, MB_ICONERROR);
+	}
+
+	if (NULL != pWbemLocator)
+	{
+		pWbemLocator->Release();
+	}
+	if (NULL != pNameSpace)
+	{
+		pNameSpace->Release();
+	}
+	if (NULL != pEnum)
+	{
+		pEnum->Release();
+	}
+	if (NULL != pConfig)
+	{
+		pConfig->Release();
+	}
+	if (NULL != pRefresher)
+	{
+		pRefresher->Release();
+	}
+
+	CoUninitialize();
+
+}
+
+void CVizNetGaugeDlg::InsertSample(int iInterface, DWORD dwDnValue, DWORD dwUpValue)
+{
+	//push down the values in array
+	for (int j = VNG_MAX_SAMPLES - 2; j >=0 ; j--)
+	{
+		m_uDownloadSamples[iInterface][j+1] = m_uDownloadSamples[iInterface][j];
+		m_uUploadSamples[iInterface][j+1] = m_uUploadSamples[iInterface][j];
+	}
+
+	m_uDownloadSamples[iInterface][0] = dwDnValue;
+	m_uUploadSamples[iInterface][0] = dwUpValue;
+
+	//get averages
+	m_fAverageDownloadSpeed[iInterface] = 0.0f;
+	m_fAverageUploadSpeed[iInterface] = 0.0f;
+
+	if (m_fAveragingIntervel >= VNG_MAX_SAMPLES) m_fAveragingIntervel = VNG_MAX_SAMPLES;
+
+	for (int j = 0; j < m_fAveragingIntervel; j++)
+	{
+		m_fAverageDownloadSpeed[iInterface] += m_uDownloadSamples[iInterface][j];
+		m_fAverageUploadSpeed[iInterface] += m_uUploadSamples[iInterface][j];
+	}
+
+	//bytes to bits per unit bps kbps mbps
+	m_fAverageDownloadSpeed[iInterface] = (8 * m_fAverageDownloadSpeed[iInterface]) / (m_fAveragingIntervel * m_uUnit); 
+	m_fAverageUploadSpeed[iInterface] = (8 * m_fAverageUploadSpeed[iInterface]) / (m_fAveragingIntervel * m_uUnit);
+
+}
+
