@@ -73,6 +73,7 @@ BEGIN_MESSAGE_MAP(CVizNetGaugeDlg, CDialogEx)
 	ON_COMMAND(ID_HELP_CHECKFORUPDATES, &CVizNetGaugeDlg::OnHelpCheckforupdates)
 	ON_COMMAND(ID_HELP_ABOUT, &CVizNetGaugeDlg::OnHelpAbout)
 	ON_COMMAND(ID_OPTIONS_SETTINGS, &CVizNetGaugeDlg::OnOptionsSettings)
+	ON_WM_SHOWWINDOW()
 END_MESSAGE_MAP()
 
 
@@ -106,6 +107,9 @@ BOOL CVizNetGaugeDlg::OnInitDialog()
 	InitSamples();
 	InitDraw();
 	InitWMI();
+	if (!LoadSettings()) ResetSettings();
+
+	m_NetHelper.ReportUsage(_T("VizNetGauge"), m_uVMaj * 10 + m_uVMin);
 
 	return TRUE;  // return TRUE  unless you set the focus to a control
 }
@@ -162,15 +166,15 @@ void CVizNetGaugeDlg::InitSamples()
 		m_fAverageUploadSpeed[i] = 0.0f;
 	}
 
-	m_fAveragingIntervel = 10.0f; //10sec for 1Hz update rate
-	m_uUnit = 1000; //kbps
-	m_sUnitName = _T("Kbps");
-	m_uSelectedInterface = 0; //total of all interfaces
+	//m_fAveragingIntervel = 10.0f; //10sec for 1Hz update rate
+	//m_uUnit = 1000; //kbps
+	//m_sUnitName = _T("Kbps");
+	//m_uSelectedInterface = 0; //total of all interfaces
 	m_uMaxValue = 0;
 	m_uNetInterfaceCount = 0;
 	m_fAverageTotalDownloadSpeed = 0.0f;
 	m_fAverageTotalUploadSpeed = 0.0f;
-
+	m_IsAutoDetect = FALSE;
 
 }
 
@@ -183,9 +187,12 @@ void CVizNetGaugeDlg::InitDraw()
 	m_uGridIntensityMaj = 75;
 	m_uGridSpacing = 10;
 
-	m_crBarDn = RGB(20, 200, 200);
-	m_crBarUp = RGB(200, 200, 150);
-	m_crBackground = RGB(m_uBkIntensity, m_uBkIntensity, m_uBkIntensity);
+	//m_crBarDn = RGB(20, 200, 200);
+	//m_crBarUp = RGB(200, 200, 150);
+	//m_crBackground = RGB(m_uBkIntensity, m_uBkIntensity, m_uBkIntensity);
+	//m_uSelectedTheme = 0;
+
+	//m_uTimerDelay = 1000; //1 Hz
 
 	m_uBarWidth = 5;
 	m_uBarHeight = 50;
@@ -197,8 +204,7 @@ void CVizNetGaugeDlg::InitDraw()
 	m_uTextFontSize = 8;
 	m_sFont = _T("Calibri");
 
-	m_uTimerDelay = 1000; //1 Hz
-	m_uTimer = SetTimer(VNG_TIMER, m_uTimerDelay, NULL);
+	//m_uTimer = SetTimer(VNG_TIMER, m_uTimerDelay, NULL);
 
 }
 
@@ -551,7 +557,17 @@ void CVizNetGaugeDlg::OnTimer(UINT_PTR nIDEvent)
 
 void CVizNetGaugeDlg::OnDestroy()
 {
+	if (!m_bMinimized) //store window position only if not minimized to tray
+	{
+		WINDOWPLACEMENT wp;
+		GetWindowPlacement(&wp);
+		AfxGetApp()->WriteProfileBinary(_T("VizNetGauge"), _T("WP"), (LPBYTE)&wp, sizeof(wp));
+	}
+
+	SaveSettings();
+
 	CDialogEx::OnDestroy();
+
 	KillTimer(m_uTimer);
 	WMICleanup();
 
@@ -1010,6 +1026,8 @@ void CVizNetGaugeDlg::UpdateMenuInterfaceNames()
 
 	m_sNetInterfaces[0] = L"Total traffic from all Interfaces";
 	m_sNetInterfaces[1] = L"Interface: Auto";
+
+	ApplySettingsToMenu();
 }
 
 void CVizNetGaugeDlg::SetupMinimizeToTray()
@@ -1126,7 +1144,7 @@ void CVizNetGaugeDlg::OnOptionsAlwaysontop()
 	m_MenuPopup.CheckMenuItem(ID_OPTIONS_ALWAYSONTOP, (MF_CHECKED * (UINT)m_bTopmostMode) | MF_BYCOMMAND);
 
 	if (m_bTopmostMode) SetWindowPos(&wndTopMost, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
-	else SetWindowPos(&wndBottom, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+	else SetWindowPos(&wndNoTopMost, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 }
 
 
@@ -1168,7 +1186,7 @@ void CVizNetGaugeDlg::OnUpdatespeedSlow()
 void CVizNetGaugeDlg::OnUpdatespeedMedium()
 {
 	KillTimer(m_uTimer);
-	m_uTimerDelay = 1000;
+	m_uTimerDelay = VNG_DEFAULT_UPDATEFREQ;
 	m_uTimer = SetTimer(VNG_TIMER, m_uTimerDelay, NULL);
 	m_MenuPopup.CheckMenuItem(ID_UPDATESPEED_SLOW, (MF_UNCHECKED | MF_BYCOMMAND));
 	m_MenuPopup.CheckMenuItem(ID_UPDATESPEED_MEDIUM, (MF_CHECKED | MF_BYCOMMAND));
@@ -1200,7 +1218,7 @@ void CVizNetGaugeDlg::OnUnitsBitspersec()
 
 void CVizNetGaugeDlg::OnUnitsKilobitspersec()
 {
-	m_uUnit = 1000;
+	m_uUnit = VNG_DEFAULT_UNIT;
 	m_sUnitName = _T("Kbps");
 	m_MenuPopup.CheckMenuItem(ID_UNITS_BITSPERSEC, (MF_UNCHECKED | MF_BYCOMMAND));
 	m_MenuPopup.CheckMenuItem(ID_UNITS_KILOBITSPERSEC, (MF_CHECKED | MF_BYCOMMAND));
@@ -1233,7 +1251,7 @@ void CVizNetGaugeDlg::OnUnitsGigabitspersec()
 
 void CVizNetGaugeDlg::OnAveraging10samples()
 {
-	m_fAveragingIntervel = 10.0f;
+	m_fAveragingIntervel = VNG_DEFAULT_AVE;
 	m_MenuPopup.CheckMenuItem(ID_AVERAGING_10SAMPLES, (MF_CHECKED | MF_BYCOMMAND));
 	m_MenuPopup.CheckMenuItem(ID_AVERAGING_30SAMPLES, (MF_UNCHECKED | MF_BYCOMMAND));
 	m_MenuPopup.CheckMenuItem(ID_AVERAGING_60SAMPLES, (MF_UNCHECKED | MF_BYCOMMAND));
@@ -1280,6 +1298,8 @@ void CVizNetGaugeDlg::OnThemesAquapale()
 	m_MenuPopup.CheckMenuItem(ID_THEMES_REDORANGE, (MF_UNCHECKED | MF_BYCOMMAND));
 	m_MenuPopup.CheckMenuItem(ID_THEMES_BLUEGREEN, (MF_UNCHECKED | MF_BYCOMMAND));
 	m_MenuPopup.CheckMenuItem(ID_THEMES_GREYWHITE, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_uSelectedTheme = VNG_DEFAULT_THEME;
+
 }
 
 
@@ -1292,6 +1312,8 @@ void CVizNetGaugeDlg::OnThemesRedorange()
 	m_MenuPopup.CheckMenuItem(ID_THEMES_REDORANGE, (MF_CHECKED | MF_BYCOMMAND));
 	m_MenuPopup.CheckMenuItem(ID_THEMES_BLUEGREEN, (MF_UNCHECKED | MF_BYCOMMAND));
 	m_MenuPopup.CheckMenuItem(ID_THEMES_GREYWHITE, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_uSelectedTheme = 1;
+
 }
 
 
@@ -1304,6 +1326,8 @@ void CVizNetGaugeDlg::OnThemesBluegreen()
 	m_MenuPopup.CheckMenuItem(ID_THEMES_REDORANGE, (MF_UNCHECKED | MF_BYCOMMAND));
 	m_MenuPopup.CheckMenuItem(ID_THEMES_BLUEGREEN, (MF_CHECKED | MF_BYCOMMAND));
 	m_MenuPopup.CheckMenuItem(ID_THEMES_GREYWHITE, (MF_UNCHECKED | MF_BYCOMMAND));
+	m_uSelectedTheme = 2;
+
 }
 
 
@@ -1316,6 +1340,8 @@ void CVizNetGaugeDlg::OnThemesGreywhite()
 	m_MenuPopup.CheckMenuItem(ID_THEMES_REDORANGE, (MF_UNCHECKED | MF_BYCOMMAND));
 	m_MenuPopup.CheckMenuItem(ID_THEMES_BLUEGREEN, (MF_UNCHECKED | MF_BYCOMMAND));
 	m_MenuPopup.CheckMenuItem(ID_THEMES_GREYWHITE, (MF_CHECKED | MF_BYCOMMAND));
+	m_uSelectedTheme = 3;
+
 }
 
 
@@ -1330,7 +1356,7 @@ void CVizNetGaugeDlg::OnInterfacesTotalofall()
 {
 	ClearCheckInterface();
 	m_MenuPopup.CheckMenuItem(ID_INTERFACES_TOTALOFALL, (MF_CHECKED | MF_BYCOMMAND));
-	m_uSelectedInterface = 0;
+	m_uSelectedInterface = VNG_DEFAULT_INTERFACE;
 }
 
 
@@ -1338,17 +1364,22 @@ void CVizNetGaugeDlg::OnInterfacesAuto()
 {
 	ClearCheckInterface();
 	m_MenuPopup.CheckMenuItem(ID_INTERFACES_AUTO, (MF_CHECKED | MF_BYCOMMAND));
-	m_uSelectedInterface = 1;
+	m_uSelectedInterface = 1; //this will change
+	m_IsAutoDetect = TRUE;
 }
 
 void CVizNetGaugeDlg::ClearCheckInterface()
 {
+	if (m_uNetInterfaceCount > VNG_MAX_INTERFACES)m_uNetInterfaceCount = 2;
+
 	for (int i = 0; i < m_uNetInterfaceCount; i++)
 	{
 		m_MenuPopup.CheckMenuItem(ID_INTERFACES_NIF1 + i, (MF_UNCHECKED | MF_BYCOMMAND));
 	}
 	m_MenuPopup.CheckMenuItem(ID_INTERFACES_TOTALOFALL, (MF_UNCHECKED | MF_BYCOMMAND));
 	m_MenuPopup.CheckMenuItem(ID_INTERFACES_AUTO, (MF_UNCHECKED | MF_BYCOMMAND));
+
+	m_IsAutoDetect = FALSE;
 
 }
 
@@ -1368,7 +1399,8 @@ void CVizNetGaugeDlg::OnHelpCheckforupdates()
 {
 	m_NetHelper.Checkforupdates(m_uVMaj, m_uVMin,
 		_T("https://oormi.in/software/cbp/updatevng.txt"),
-		_T(" https://github.com/oormicreations/VizNetGauge/releases"), _T("VizNetGauge"));
+		_T(" https://github.com/oormicreations/VizNetGauge/releases"), 
+		_T("VizNetGauge"));
 }
 
 
@@ -1387,12 +1419,118 @@ void CVizNetGaugeDlg::OnOptionsSettings()
 
 void CVizNetGaugeDlg::SaveSettings()
 {
+	CString profile;
+	profile.Format(_T("%d%d"), m_uVMaj, m_uVMin);
+	VNGSET ps;
+
+	ps.m_bSetTopMost = m_bTopmostMode;
+	ps.m_uSetUpdateFreq = m_uTimerDelay;
+	ps.m_uSetAve = m_fAveragingIntervel;
+	ps.m_uSetSelInterface = m_uSelectedInterface;
+	if(m_IsAutoDetect) 	ps.m_uSetSelInterface = 1;
+	ps.m_uSetTheme = m_uSelectedTheme;
+	ps.m_uSetUnit = m_uUnit;
+	ps.m_uSetUnused1 = 0;
+	ps.m_uSetUnused2 = 0;
+	ps.m_uSetUnused3 = 0;
+	ps.m_uSetUnused4 = 0;
+
+	AfxGetApp()->WriteProfileBinary(_T("VizNetGauge") + profile, _T("Settings"), (LPBYTE)&ps, sizeof(ps));
 }
 
-void CVizNetGaugeDlg::LoadSettings()
+
+BOOL CVizNetGaugeDlg::LoadSettings()
 {
+	CString profile;
+	profile.Format(_T("%d%d"), m_uVMaj, m_uVMin);
+	VNGSET *pps;
+	UINT n;
+	if (AfxGetApp()->GetProfileBinary(_T("VizNetGauge") + profile, _T("Settings"), (LPBYTE*)&pps, &n))
+	{
+		if (n == sizeof(VNGSET))
+		{
+			 m_bTopmostMode = pps->m_bSetTopMost;
+			 m_uTimerDelay = pps->m_uSetUpdateFreq;
+			 m_fAveragingIntervel = pps->m_uSetAve;
+			 m_uSelectedInterface = pps->m_uSetSelInterface;
+			 m_uSelectedTheme = pps->m_uSetTheme;
+			 m_uUnit = pps->m_uSetUnit;
+		}
+
+		delete[] pps;
+		ApplySettingsToMenu();
+
+		return TRUE;
+	}
+	
+
+	return FALSE;
+}
+
+void CVizNetGaugeDlg::ApplySettingsToMenu()
+{
+	m_bTopmostMode = !m_bTopmostMode;
+	OnOptionsAlwaysontop();
+
+	if (m_uTimerDelay == 5000) OnUpdatespeedSlow();
+	if (m_uTimerDelay == VNG_DEFAULT_UPDATEFREQ) OnUpdatespeedMedium();
+	if (m_uTimerDelay == 300) OnUpdatespeedFast();
+
+	if (m_uUnit == 1) OnUnitsBitspersec();
+	if (m_uUnit == VNG_DEFAULT_UNIT) OnUnitsKilobitspersec();
+	if (m_uUnit == 1000000) OnUnitsMegabitspersec();
+	if (m_uUnit == 1000000000) OnUnitsGigabitspersec();
+
+	if (m_fAveragingIntervel == VNG_DEFAULT_AVE) OnAveraging10samples();
+	if (m_fAveragingIntervel == 30.0f) OnAveraging30sample();
+	if (m_fAveragingIntervel == 60.0f) OnAveraging60samples();
+	if (m_fAveragingIntervel == 1.0f) OnAveragingInstantaneous();
+
+	if (m_uSelectedTheme == VNG_DEFAULT_THEME) OnThemesAquapale();
+	if (m_uSelectedTheme == 1) OnThemesRedorange();
+	if (m_uSelectedTheme == 2) OnThemesBluegreen();
+	if (m_uSelectedTheme == 3) OnThemesGreywhite();
+
+	if (m_uSelectedInterface == VNG_DEFAULT_INTERFACE) OnInterfacesTotalofall();
+	else
+	{
+		if (m_uSelectedInterface == 1) OnInterfacesAuto();
+		else
+		{
+			OnCommandRangeInterfaces(m_uSelectedInterface - 2 + ID_INTERFACES_NIF1);
+		}
+	}
+
 }
 
 void CVizNetGaugeDlg::ResetSettings()
 {
+	m_bTopmostMode = !VNG_DEFAULT_TOPMOST;
+	OnOptionsAlwaysontop();
+	OnUpdatespeedMedium();
+	OnUnitsKilobitspersec();
+	OnAveraging10samples();
+	OnThemesAquapale();
+	OnInterfacesTotalofall();
+}
+
+void CVizNetGaugeDlg::OnShowWindow(BOOL bShow, UINT nStatus)
+{
+	CDialogEx::OnShowWindow(bShow, nStatus);
+
+	static bool bOnce = true;
+
+	if (bShow && !IsWindowVisible() && bOnce)
+	{
+		bOnce = false;
+
+		WINDOWPLACEMENT *lwp;
+		UINT nl;
+
+		if (AfxGetApp()->GetProfileBinary(_T("VizNetGauge"), _T("WP"), (LPBYTE*)&lwp, &nl))
+		{
+			SetWindowPlacement(lwp);
+			delete[] lwp;
+		}
+	}
 }

@@ -17,9 +17,19 @@ using namespace std;
 #define VNG_MAX_INTERFACES	10
 #define VNG_MAX_SAMPLES		256
 
+#define VNG_DEFAULT_TOPMOST		0
+#define VNG_DEFAULT_UPDATEFREQ	1000
+#define VNG_DEFAULT_UNIT		1000
+#define VNG_DEFAULT_AVE			10.0f
+#define VNG_DEFAULT_THEME		0
+#define VNG_DEFAULT_INTERFACE	0
+//#define VNG_DEFAULT_
+
+
 #define VNG_TIMER			WM_USER + 200
 #define WM_TRAY_MESSAGE		WM_USER + 201
 #define WM_TRAY_RESTORE		WM_USER + 202
+
 
 
 // CVizNetGaugeDlg dialog
@@ -43,7 +53,7 @@ public:
 	COLORREF m_crBarDn, m_crBarUp, m_crBackground;
 	UINT m_uWinSzMin, m_uWinSzMax;
 	UINT m_uBarCount, m_uBarWidth, m_uBarHeight, m_uBarSpacing;
-	UINT m_uTextIntensityTitle, m_uTextIntensityValue;
+	UINT m_uTextIntensityTitle, m_uTextIntensityValue, m_uSelectedTheme;
 
 	IWbemRefresher			*pRefresher;
 	IWbemHiPerfEnum			*pEnum;
@@ -74,6 +84,23 @@ public:
 	CString m_sUnitName;
 	UINT m_uSelectedInterface;
 	CString m_sSelectedInterfaceName;
+	BOOL m_IsAutoDetect;
+
+	typedef struct tagVNGSET
+	{
+		BOOL m_bSetTopMost;
+		UINT m_uSetUpdateFreq;
+		UINT m_uSetUnit;
+		float m_uSetAve;
+		UINT m_uSetTheme;
+		UINT m_uSetSelInterface;
+		UINT m_uSetUnused1;
+		UINT m_uSetUnused2;
+		UINT m_uSetUnused3;
+		UINT m_uSetUnused4;
+
+	} VNGSET;
+
 
 	void InitDraw();
 	void Plot();
@@ -106,8 +133,9 @@ public:
 	void ClearCheckInterface();
 
 	void SaveSettings();
-	void LoadSettings();
+	BOOL LoadSettings();
 	void ResetSettings();
+	void ApplySettingsToMenu();
 
 // Dialog Data
 #ifdef AFX_DESIGN_TIME
@@ -166,4 +194,5 @@ public:
 	afx_msg void OnHelpCheckforupdates();
 	afx_msg void OnHelpAbout();
 	afx_msg void OnOptionsSettings();
+	afx_msg void OnShowWindow(BOOL bShow, UINT nStatus);
 };
