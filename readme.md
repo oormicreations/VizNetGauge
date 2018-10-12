@@ -2,30 +2,28 @@
 
 
 
-
 **VizNetGauge** is a graphical network speed meter desktop widget for MS Windows
 
 It displays an average download and upload speed on any of the network interfaces. It also graphs recent speeds.
 
 This tiny but useful utility is completely free and open sourced. 
 
+![Promo](https://oormi.in/software/vng/images/Icon170-01.png)
+
+![Promo](https://oormi.in/software/vng/images/ss.png)
+
 ---
 
 **Usage and Help**
 
-Coming soon
+https://oormi.in/software/vng/help.html
 
----
-
-**Intro Video**
-
-Coming soon
 
 ---
 
 **Download link**
 
-Coming soon
+https://github.com/oormicreations/VizNetGauge/releases
 
 ---
 
