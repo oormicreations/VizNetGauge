@@ -11,6 +11,7 @@ using namespace std;
 #include <Wbemidl.h>
 #include "NetHelper.h"
 #include "AboutDlg.h"
+#include "DataUseDlg.h"
 
 #pragma comment(lib, "wbemuuid.lib")
 
@@ -50,14 +51,14 @@ public:
 	UINT m_uValueFontSize, m_uTextFontSize;
 	CString m_sFont;
 	UINT m_uBkIntensity, m_uGridIntensityMin, m_uGridIntensityMaj, m_uGridSpacing;
-	COLORREF m_crBarDn, m_crBarUp, m_crBackground;
+	COLORREF m_crBarDn, m_crBarUp, m_crBackground, m_crDataBackground;
 	UINT m_uWinSzMin, m_uWinSzMax;
 	UINT m_uBarCount, m_uBarWidth, m_uBarHeight, m_uBarSpacing;
 	UINT m_uTextIntensityTitle, m_uTextIntensityValue, m_uSelectedTheme;
 
-	IWbemRefresher			*pRefresher;
-	IWbemHiPerfEnum			*pEnum;
-	IWbemConfigureRefresher *pConfig;
+	IWbemRefresher			*pRefresher, *pRefresherRaw;
+	IWbemHiPerfEnum			*pEnum, *pEnumRaw;
+	IWbemConfigureRefresher *pConfig, *pConfigRaw;
 	IWbemServices           *pNameSpace;
 	IWbemLocator            *pWbemLocator;
 	HRESULT					m_hrResult;
@@ -68,6 +69,16 @@ public:
 	LONG					m_lInterfaceNameHandle;
 	LONG					m_lBytesReceivedPerSecHandle;
 	LONG					m_lBytesSentPerSecHandle;
+
+	BOOL					m_bIsInitHandles2;
+	CIMTYPE					m_lBytesReceivedPerSecType2;
+	CIMTYPE					m_lBytesSentPerSecType2;
+	LONG					m_lBytesReceivedPerSecHandle2;
+	LONG					m_lBytesSentPerSecHandle2;
+	LONG					m_lBytesDown;
+	LONG					m_lBytesUp;
+	LONG					m_lBytesTotal;
+	LONG					m_lBytesQuota;
 
 	UINT m_uDownloadSamples[VNG_MAX_INTERFACES][VNG_MAX_SAMPLES];
 	UINT m_uUploadSamples[VNG_MAX_INTERFACES][VNG_MAX_SAMPLES];
@@ -98,25 +109,38 @@ public:
 		UINT m_uSetUnused2;
 		UINT m_uSetUnused3;
 		UINT m_uSetUnused4;
+		LONG m_lMaxData;
+		LONG m_lThreshold;
+		UINT m_uPeriod1;
+		UINT m_uPeriod2;
+		BOOL m_bWarn;
+		BOOL m_bWarnPop;
+		BOOL m_bWarnDing;
+		BOOL m_bWarnVoice;
+		BOOL m_bRenewDay;
+		BOOL m_bRenewMonth;
 
 	} VNGSET;
 
+	CDataUseDlg m_DataUseDlg;
 
 	void InitDraw();
 	void Plot();
 	void PaintGauge();
 	void RePaint();
-	void DrawBackground(CDC * pDC, CRect clRect);
+	void DrawBackground(CDC * pDC, CRect clRect, CRect r);
 	void DrawGrid(CDC * pDC, CRect clRect, BOOL bMajor);
 	void DrawBars(CDC * pDC, CRect clRect);
 	void DrawTextBackground(CDC * pDC, CRect clRect);
 	void DrawSpeedText(CDC * pDC, CRect clRect);
+	void DrawDataText(CDC * pDC, CRect clRect);
 	void DrawInfoText(CDC * pDC, CRect clRect);
 	void DrawVignette(CDC * pDC, CRect clRect);
 	float GetScaleRatio();
 
 	BOOL InitWMI();
 	BOOL GetStatsRefresher();
+	BOOL GetStatsRefresherRaw();
 	void WMICleanup();
 
 	void InitSamples();
@@ -195,4 +219,5 @@ public:
 	afx_msg void OnHelpAbout();
 	afx_msg void OnOptionsSettings();
 	afx_msg void OnShowWindow(BOOL bShow, UINT nStatus);
+	afx_msg void OnOptionsConfiguredatausage();
 };

@@ -74,6 +74,7 @@ BEGIN_MESSAGE_MAP(CVizNetGaugeDlg, CDialogEx)
 	ON_COMMAND(ID_HELP_ABOUT, &CVizNetGaugeDlg::OnHelpAbout)
 	ON_COMMAND(ID_OPTIONS_SETTINGS, &CVizNetGaugeDlg::OnOptionsSettings)
 	ON_WM_SHOWWINDOW()
+	ON_COMMAND(ID_OPTIONS_CONFIGUREDATAUSAGE, &CVizNetGaugeDlg::OnOptionsConfiguredatausage)
 END_MESSAGE_MAP()
 
 
@@ -176,6 +177,11 @@ void CVizNetGaugeDlg::InitSamples()
 	m_fAverageTotalUploadSpeed = 0.0f;
 	m_IsAutoDetect = FALSE;
 
+	m_lBytesTotal = 0;
+	m_lBytesDown = 0;
+	m_lBytesUp = 0;
+	m_lBytesQuota = 2000000000;
+
 }
 
 void CVizNetGaugeDlg::InitDraw()
@@ -205,12 +211,14 @@ void CVizNetGaugeDlg::InitDraw()
 	m_sFont = _T("Calibri");
 
 	//m_uTimer = SetTimer(VNG_TIMER, m_uTimerDelay, NULL);
+	m_crDataBackground = RGB(50, 50, 50);
 
 }
 
 void CVizNetGaugeDlg::Plot()
 {
 	GetStatsRefresher();
+	GetStatsRefresherRaw();
 	GetTotalAllInterfaces();
 	AutodetectActiveInterface();
 	RePaint();
@@ -228,9 +236,12 @@ void CVizNetGaugeDlg::PaintGauge()
 {
 	CRect rClient;
 	GetClientRect(rClient);
+	CRect rDClient(rClient);
 
+	int rcw = rClient.Width();
+	int rch = rClient.Height();
 	//check if minimized
-	if ((rClient.Width() < 1) || (rClient.Height() < 1)) return;
+	if ((rcw < 1) || (rch < 1)) return;
 
 	rClient.bottom = rClient.bottom / 2;
 
@@ -242,28 +253,32 @@ void CVizNetGaugeDlg::PaintGauge()
 	bitMap->CreateCompatibleBitmap(pDC, rClient.Width(), rClient.Height());
 	CBitmap * oldMap = dcMem->SelectObject(bitMap);
 
+	rDClient.bottom = (float)rClient.bottom *0.9f;
+	if(rDClient.Height()<150)rDClient.bottom = (float)rClient.bottom *0.8f;
+
 	//background
-	DrawBackground(dcMem, rClient);
+	DrawBackground(dcMem, rClient, rDClient);
 
 	//grids
-	DrawGrid(dcMem, rClient, FALSE);
-	DrawGrid(dcMem, rClient, TRUE);
+	DrawGrid(dcMem, rDClient, FALSE);
+	DrawGrid(dcMem, rDClient, TRUE);
 
 	//bars
-	DrawBars(dcMem, rClient);
+	DrawBars(dcMem, rDClient);
 
 	//Text background
 	//DrawTextBackground(dcMem, rClient);
 
 	//Text
-	DrawInfoText(dcMem, rClient);
-	DrawSpeedText(dcMem, rClient);
+	DrawInfoText(dcMem, rDClient);
+	DrawSpeedText(dcMem, rDClient);
+	DrawDataText(dcMem, rDClient);
 
 	//Vignette
 	//DrawVignette(dcMem, rClient);
 
 	//render
-	int iYpos = (m_bIsUpload)*rClient.bottom;
+	int iYpos = (m_bIsUpload) * rClient.bottom;
 	pDC->BitBlt(rClient.left, rClient.top + iYpos, rClient.Width(), rClient.Height(), dcMem, 0, 0, SRCCOPY);
 
 	//clean up
@@ -276,10 +291,17 @@ void CVizNetGaugeDlg::PaintGauge()
 
 }
 
-void CVizNetGaugeDlg::DrawBackground(CDC * pDC, CRect clRect)
+void CVizNetGaugeDlg::DrawBackground(CDC * pDC, CRect clRect, CRect r)
 {
+
 	//COLORREF crBack = RGB(m_uBkIntensity, m_uBkIntensity, m_uBkIntensity);
 	pDC->FillSolidRect(clRect, m_crBackground);
+
+	int top = (float)clRect.bottom*0.9f;
+	if(r.Height()<150)top = (float)clRect.bottom*0.8f;
+	CRect rData(clRect.left, top, clRect.right, clRect.bottom);
+	pDC->FillSolidRect(rData, m_crDataBackground);
+
 }
 
 void CVizNetGaugeDlg::DrawGrid(CDC * pDC, CRect clRect, BOOL bMajor)
@@ -487,6 +509,44 @@ void CVizNetGaugeDlg::DrawSpeedText(CDC * pDC, CRect clRect)
 	fValue.DeleteObject();
 }
 
+void CVizNetGaugeDlg::DrawDataText(CDC * pDC, CRect clRect)
+{
+	if (clRect.Width() < 200) return;
+
+	CRect rText;
+	rText.left = clRect.left;
+	rText.top = clRect.bottom + clRect.bottom*0.015f;
+	rText.right = clRect.right;
+	rText.bottom = clRect.bottom + 400;
+	
+	COLORREF crValue = RGB(m_uTextIntensityValue, m_uTextIntensityValue, m_uTextIntensityValue);
+
+	CString sValue;
+	UINT mb = 1024 * 1024;
+	if (m_bIsUpload) sValue.Format(_T("%ld MB Total : : %ld MB Remaining"), m_lBytesTotal/mb, (m_lBytesQuota - m_lBytesTotal) / mb);
+	else sValue.Format(_T("%ld MB Down : : %ld MB Up"), m_lBytesDown / mb, m_lBytesUp / mb);
+
+	DRAWTEXTPARAMS dtParams;
+	dtParams.cbSize = sizeof(DRAWTEXTPARAMS);
+	dtParams.iLeftMargin = 0;
+	dtParams.iRightMargin = 0;
+	dtParams.iTabLength = 1;
+
+	CFont fValue;
+	fValue.CreatePointFont((int)(m_uValueFontSize * 4 * GetScaleRatio()), m_sFont);
+
+	//CFont fDesc;
+	//fDesc.CreatePointFont((int)(m_uValueFontSize * 2 * GetScaleRatio()), m_sFont);
+
+	CFont * oldFont2 = pDC->SelectObject(&fValue);
+	pDC->SetBkMode(TRANSPARENT);
+	pDC->SetTextColor(crValue/1.5f);
+	pDC->DrawTextEx(sValue.GetBuffer(), -1, rText, DT_CENTER | DT_SINGLELINE, &dtParams);
+
+	pDC->SelectObject(oldFont2);
+	fValue.DeleteObject();
+}
+
 void CVizNetGaugeDlg::DrawVignette(CDC * pDC, CRect clRect)
 {
 	int iVigWidth = 30 * clRect.Width()/m_uWinSzMax;
@@ -630,13 +690,19 @@ BOOL CVizNetGaugeDlg::InitWMI()
 	pRefresher = NULL;
 	pEnum = NULL;
 	pConfig = NULL;
+	pRefresherRaw = NULL;
+	pEnumRaw = NULL;
+	pConfigRaw = NULL;
+
 	pNameSpace = NULL;
 	pWbemLocator = NULL;
 	m_hrResult = S_OK;
 	m_bIsInitHandles = TRUE;
+	m_bIsInitHandles2 = TRUE;
 
 	BSTR bstrNameSpace = NULL;
 	long lID = 0;
+	long lIDRaw = 0;
 
 	if (FAILED(m_hrResult = CoInitializeEx(NULL, COINIT_MULTITHREADED)))
 	{
@@ -705,6 +771,17 @@ BOOL CVizNetGaugeDlg::InitWMI()
 		return 1;
 	}
 
+	if (FAILED(m_hrResult = CoCreateInstance(
+		CLSID_WbemRefresher,
+		NULL,
+		CLSCTX_INPROC_SERVER,
+		IID_IWbemRefresher,
+		(void**)&pRefresherRaw)))
+	{
+		WMICleanup();
+		return 1;
+	}
+
 	if (FAILED(m_hrResult = pRefresher->QueryInterface(
 		IID_IWbemConfigureRefresher,
 		(void **)&pConfig)))
@@ -713,10 +790,18 @@ BOOL CVizNetGaugeDlg::InitWMI()
 		return 1;
 	}
 
+	if (FAILED(m_hrResult = pRefresherRaw->QueryInterface(
+		IID_IWbemConfigureRefresher,
+		(void **)&pConfigRaw)))
+	{
+		WMICleanup();
+		return 1;
+	}
+
 	// Add an enumerator to the refresher.
 	if (FAILED(m_hrResult = pConfig->AddEnum(
 		pNameSpace,
-//		L"Win32_PerfRawData_PerfProc_Process",
+//		L"Win32_PerfRawData_Tcpip_NetworkInterface",
 		L"Win32_PerfFormattedData_Tcpip_NetworkInterface",
 		0,
 		NULL,
@@ -726,8 +811,26 @@ BOOL CVizNetGaugeDlg::InitWMI()
 		WMICleanup();
 		return 1;
 	}
+
+	// Add an enumerator to the refresher.
+	if (FAILED(m_hrResult = pConfigRaw->AddEnum(
+		pNameSpace,
+		L"Win32_PerfRawData_Tcpip_NetworkInterface",
+//		L"Win32_PerfFormattedData_Tcpip_NetworkInterface",
+		0,
+		NULL,
+		&pEnumRaw,
+		&lIDRaw)))
+	{
+		WMICleanup();
+		return 1;
+	}
+
+
 	pConfig->Release();
 	pConfig = NULL;
+	pConfigRaw->Release();
+	pConfigRaw = NULL;
 
 	if (NULL != bstrNameSpace)
 	{
@@ -753,7 +856,7 @@ BOOL CVizNetGaugeDlg::GetStatsRefresher()
 	dwNumReturned = 0;
 	dwIDProcess = 0;
 	dwNumObjects = 0;
-
+	
 	if (FAILED(hr = pRefresher->Refresh(0L)))
 	{
 		goto CLEANUP;
@@ -898,6 +1001,177 @@ CLEANUP:
 	return 0;
 }
 
+
+BOOL CVizNetGaugeDlg::GetStatsRefresherRaw()
+{
+	HRESULT                 hr = S_OK;
+	DWORD                   dwVirtualBytes = 0;
+	DWORD                   dwProcessId = 0;
+	DWORD                   dwNumObjects = 0;
+	DWORD                   dwNumReturned = 0;
+	DWORD                   dwIDProcess = 0;
+	DWORD                   i = 0;
+	int                     x = 0;
+	IWbemObjectAccess       **apEnumAccess = NULL;
+
+	dwNumReturned = 0;
+	dwIDProcess = 0;
+	dwNumObjects = 0;
+
+	if (FAILED(hr = pRefresherRaw->Refresh(0L)))
+	{
+		goto CLEANUP;
+	}
+
+	hr = pEnumRaw->GetObjects(0L, dwNumObjects, apEnumAccess, &dwNumReturned);
+
+	// If the buffer was not big enough, allocate a bigger buffer and retry.
+	if (hr == WBEM_E_BUFFER_TOO_SMALL && dwNumReturned > dwNumObjects)
+	{
+		apEnumAccess = new IWbemObjectAccess*[dwNumReturned];
+		if (NULL == apEnumAccess)
+		{
+			hr = E_OUTOFMEMORY;
+			goto CLEANUP;
+		}
+		SecureZeroMemory(apEnumAccess,
+			dwNumReturned * sizeof(IWbemObjectAccess*));
+		dwNumObjects = dwNumReturned;
+
+		if (FAILED(hr = pEnumRaw->GetObjects(0L,
+			dwNumObjects,
+			apEnumAccess,
+			&dwNumReturned)))
+		{
+			goto CLEANUP;
+		}
+	}
+	else
+	{
+		if (hr == WBEM_S_NO_ERROR)
+		{
+			hr = WBEM_E_NOT_FOUND;
+			goto CLEANUP;
+		}
+	}
+
+	// First time through, get the handles and names of interfaces.
+	if (m_bIsInitHandles2)
+	{
+		//if (FAILED(hr = apEnumAccess[0]->GetPropertyHandle(
+		//	L"Name",
+		//	&m_lInterfaceNameType,
+		//	&m_lInterfaceNameHandle)))
+		//{
+		//	goto CLEANUP;
+		//}
+		if (FAILED(hr = apEnumAccess[0]->GetPropertyHandle(
+			L"BytesReceivedPerSec",
+			&m_lBytesReceivedPerSecType2,
+			&m_lBytesReceivedPerSecHandle2)))
+		{
+			goto CLEANUP;
+		}
+		if (FAILED(hr = apEnumAccess[0]->GetPropertyHandle(
+			L"BytesSentPerSec",
+			&m_lBytesSentPerSecType2,
+			&m_lBytesSentPerSecHandle2)))
+		{
+			goto CLEANUP;
+		}
+
+		/*for (i = 0; i < dwNumReturned; i++)
+		{
+			long nb = 0;
+			byte data[200];
+
+			if (FAILED(hr = apEnumAccess[i]->ReadPropertyValue(m_lInterfaceNameHandle, 200, &nb, data)))
+			{
+				goto CLEANUP;
+			}
+
+			//interface names
+			wstring wstr(reinterpret_cast<wchar_t*>(data), nb / sizeof(wchar_t));
+			CString sName(wstr.c_str());
+
+			if ((i + 2) < VNG_MAX_INTERFACES) //0 and 1 are for total and auto modes
+			{
+				m_sNetInterfaces[i + 2] = sName;
+				m_uNetInterfaceCount++;
+			}
+		}
+
+		UpdateMenuInterfaceNames();*/
+		m_bIsInitHandles2 = FALSE;
+	}
+
+	m_lBytesTotal = 0;
+	m_lBytesDown = 0;
+	m_lBytesUp = 0;
+
+	for (i = 0; i < dwNumReturned; i++)
+	{
+		long nb = 0;
+		//byte data[200];
+		DWORD dwBytesRecdPerSec = 0;
+		DWORD dwBytesSentPerSec = 0;
+
+		//if (FAILED(hr = apEnumAccess[i]->ReadPropertyValue(m_lInterfaceNameHandle, 200, &nb, data)))
+		//{
+		//	goto CLEANUP;
+		//}
+		if (FAILED(hr = apEnumAccess[i]->ReadDWORD(m_lBytesReceivedPerSecHandle2, &dwBytesRecdPerSec)))
+		{
+			goto CLEANUP;
+		}
+		if (FAILED(hr = apEnumAccess[i]->ReadDWORD(m_lBytesSentPerSecHandle2, &dwBytesSentPerSec)))
+		{
+			goto CLEANUP;
+		}
+
+		//interface names
+		//wstring wstr(reinterpret_cast<wchar_t*>(data), nb / sizeof(wchar_t));
+		//CString sName(wstr.c_str());
+		//m_sNetInterfaces[i] = sName;
+
+		//sample
+		//InsertSample(i + 2, dwBytesRecdPerSec, dwBytesSentPerSec);
+
+		m_lBytesDown += dwBytesRecdPerSec;
+		m_lBytesUp += dwBytesSentPerSec;
+		m_lBytesTotal += dwBytesRecdPerSec + dwBytesSentPerSec;
+
+		// Done with the object
+		apEnumAccess[i]->Release();
+		apEnumAccess[i] = NULL;
+	}
+
+	if (NULL != apEnumAccess)
+	{
+		delete[] apEnumAccess;
+		apEnumAccess = NULL;
+	}
+
+CLEANUP:
+
+	if (NULL != apEnumAccess)
+	{
+		for (i = 0; i < dwNumReturned; i++)
+		{
+			if (apEnumAccess[i] != NULL)
+			{
+				apEnumAccess[i]->Release();
+				apEnumAccess[i] = NULL;
+			}
+		}
+		delete[] apEnumAccess;
+	}
+
+	return 0;
+}
+
+
+
 void CVizNetGaugeDlg::WMICleanup()
 {
 	if (FAILED(m_hrResult))
@@ -918,6 +1192,10 @@ void CVizNetGaugeDlg::WMICleanup()
 	if (NULL != pEnum)
 	{
 		pEnum->Release();
+	}
+	if (NULL != pEnumRaw)
+	{
+		pEnumRaw->Release();
 	}
 	if (NULL != pConfig)
 	{
@@ -1435,6 +1713,18 @@ void CVizNetGaugeDlg::SaveSettings()
 	ps.m_uSetUnused3 = 0;
 	ps.m_uSetUnused4 = 0;
 
+	ps.m_lMaxData = m_DataUseDlg.m_lMaxData;
+	ps.m_lThreshold = m_DataUseDlg.m_lThreshold;
+	ps.m_uPeriod1 = m_DataUseDlg.m_uPeriod1;
+	ps.m_uPeriod2 = m_DataUseDlg.m_uPeriod2;
+	ps.m_bWarn = m_DataUseDlg.m_bWarn;
+	ps.m_bWarnPop = m_DataUseDlg.m_bWarnPop;
+	ps.m_bWarnDing = m_DataUseDlg.m_bWarnDing;
+	ps.m_bWarnVoice = m_DataUseDlg.m_bWarnVoice;
+	ps.m_bRenewDay = m_DataUseDlg.m_bRenewDay;
+	ps.m_bRenewMonth = m_DataUseDlg.m_bRenewMonth;
+
+
 	AfxGetApp()->WriteProfileBinary(_T("VizNetGauge") + profile, _T("Settings"), (LPBYTE)&ps, sizeof(ps));
 }
 
@@ -1455,6 +1745,22 @@ BOOL CVizNetGaugeDlg::LoadSettings()
 			 m_uSelectedInterface = pps->m_uSetSelInterface;
 			 m_uSelectedTheme = pps->m_uSetTheme;
 			 m_uUnit = pps->m_uSetUnit;
+
+			 m_DataUseDlg.m_lMaxData = pps->m_lMaxData;
+			 m_DataUseDlg.m_lThreshold = pps->m_lThreshold;
+			 m_DataUseDlg.m_uPeriod1 = pps->m_uPeriod1;
+			 m_DataUseDlg.m_uPeriod2 = pps->m_uPeriod2;
+			 m_DataUseDlg.m_bWarn = pps->m_bWarn;
+			 m_DataUseDlg.m_bWarnPop = pps->m_bWarnPop;
+			 m_DataUseDlg.m_bWarnDing = pps->m_bWarnDing;
+			 m_DataUseDlg.m_bWarnVoice = pps->m_bWarnVoice;
+			 m_DataUseDlg.m_bRenewDay = pps->m_bRenewDay;
+			 m_DataUseDlg.m_bRenewMonth = pps->m_bRenewMonth;
+
+		}
+		else
+		{
+			ResetSettings();
 		}
 
 		delete[] pps;
@@ -1512,6 +1818,19 @@ void CVizNetGaugeDlg::ResetSettings()
 	OnAveraging10samples();
 	OnThemesAquapale();
 	OnInterfacesTotalofall();
+
+	m_DataUseDlg.m_lMaxData = 20000;
+	m_DataUseDlg.m_lThreshold = 1000;
+	m_DataUseDlg.m_uPeriod1 = 1;
+	m_DataUseDlg.m_uPeriod2 = 1;
+	m_DataUseDlg.m_bWarn = 1;
+	m_DataUseDlg.m_bWarnPop = 1;
+	m_DataUseDlg.m_bWarnDing = 0;
+	m_DataUseDlg.m_bWarnVoice = 1;
+	m_DataUseDlg.m_bRenewDay = 0;
+	m_DataUseDlg.m_bRenewMonth = 1;
+
+	SaveSettings();
 }
 
 void CVizNetGaugeDlg::OnShowWindow(BOOL bShow, UINT nStatus)
@@ -1533,4 +1852,10 @@ void CVizNetGaugeDlg::OnShowWindow(BOOL bShow, UINT nStatus)
 			delete[] lwp;
 		}
 	}
+}
+
+
+void CVizNetGaugeDlg::OnOptionsConfiguredatausage()
+{
+	if (IDOK == m_DataUseDlg.DoModal()) SaveSettings();
 }
