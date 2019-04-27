@@ -85,4 +85,12 @@
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>
+  <ItemGroup>
+    <Media Include="res\ding.wav">
+      <Filter>Resource Files</Filter>
+    </Media>
+    <Media Include="res\warn.wav">
+      <Filter>Resource Files</Filter>
+    </Media>
+  </ItemGroup>
 </Project>

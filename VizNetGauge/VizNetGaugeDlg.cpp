@@ -6,7 +6,8 @@
 #include "VizNetGauge.h"
 #include "VizNetGaugeDlg.h"
 #include "afxdialogex.h"
-
+#include <mmsystem.h>
+#pragma comment(lib,"Winmm.lib")
 
 
 
@@ -75,6 +76,8 @@ BEGIN_MESSAGE_MAP(CVizNetGaugeDlg, CDialogEx)
 	ON_COMMAND(ID_OPTIONS_SETTINGS, &CVizNetGaugeDlg::OnOptionsSettings)
 	ON_WM_SHOWWINDOW()
 	ON_COMMAND(ID_OPTIONS_CONFIGUREDATAUSAGE, &CVizNetGaugeDlg::OnOptionsConfiguredatausage)
+	ON_COMMAND(ID_OPTIONS_RESETDATAUSAGE, &CVizNetGaugeDlg::OnOptionsResetdatausage)
+	ON_COMMAND(ID_OPTIONS_RESTOREDATABACKTOHISTORICAL, &CVizNetGaugeDlg::OnOptionsRestoredatabacktohistorical)
 END_MESSAGE_MAP()
 
 
@@ -96,7 +99,7 @@ BOOL CVizNetGaugeDlg::OnInitDialog()
 
 	// TODO: Add extra initialization here
 	m_uVMaj = 1;
-	m_uVMin = 0;
+	m_uVMin = 1;
 
 	m_bTopmostMode = FALSE;
 	m_bMinimized = FALSE;
@@ -180,7 +183,15 @@ void CVizNetGaugeDlg::InitSamples()
 	m_lBytesTotal = 0;
 	m_lBytesDown = 0;
 	m_lBytesUp = 0;
-	m_lBytesQuota = 2000000000;
+	m_lBytesRem = 0;
+	m_lBytesDownHis = 0;
+	m_lBytesUpHis = 0;
+	m_lBytesDownHisLast = 0;
+	m_lBytesUpHisLast = 0;
+
+	m_uBackUpInterval = 0;
+	m_IsWarnSent = FALSE;
+
 
 }
 
@@ -222,6 +233,7 @@ void CVizNetGaugeDlg::Plot()
 	GetTotalAllInterfaces();
 	AutodetectActiveInterface();
 	RePaint();
+	Warn();
 }
 
 void CVizNetGaugeDlg::RePaint()
@@ -522,9 +534,14 @@ void CVizNetGaugeDlg::DrawDataText(CDC * pDC, CRect clRect)
 	COLORREF crValue = RGB(m_uTextIntensityValue, m_uTextIntensityValue, m_uTextIntensityValue);
 
 	CString sValue;
-	UINT mb = 1024 * 1024;
-	if (m_bIsUpload) sValue.Format(_T("%ld MB Total : : %ld MB Remaining"), m_lBytesTotal/mb, (m_lBytesQuota - m_lBytesTotal) / mb);
-	else sValue.Format(_T("%ld MB Down : : %ld MB Up"), m_lBytesDown / mb, m_lBytesUp / mb);
+	UINT mb = 1048576;// 1024 * 1024;
+	LONG dn = (m_lBytesDownHisLast + m_lBytesDown);
+	LONG up = (m_lBytesUpHisLast + m_lBytesUp);
+	LONG total = (dn + up) / mb;
+	m_lBytesRem = (m_DataUseDlg.m_lMaxData) - total;
+
+	if (m_bIsUpload) sValue.Format(_T("%ld MB Total : : %ld MB Remaining"), total, m_lBytesRem);
+	else sValue.Format(_T("%ld MB Down : : %ld MB Up"), dn/mb, up/mb);
 
 	DRAWTEXTPARAMS dtParams;
 	dtParams.cbSize = sizeof(DRAWTEXTPARAMS);
@@ -609,6 +626,7 @@ void CVizNetGaugeDlg::OnTimer(UINT_PTR nIDEvent)
 	if (nIDEvent == m_uTimer)
 	{
 		Plot();
+		SaveHis();
 	}
 
 	CDialogEx::OnTimer(nIDEvent);
@@ -1724,6 +1742,9 @@ void CVizNetGaugeDlg::SaveSettings()
 	ps.m_bRenewDay = m_DataUseDlg.m_bRenewDay;
 	ps.m_bRenewMonth = m_DataUseDlg.m_bRenewMonth;
 
+	ps.m_lBytesDown = m_lBytesDownHis;
+	ps.m_lBytesUp = m_lBytesUpHis;
+
 
 	AfxGetApp()->WriteProfileBinary(_T("VizNetGauge") + profile, _T("Settings"), (LPBYTE)&ps, sizeof(ps));
 }
@@ -1756,6 +1777,9 @@ BOOL CVizNetGaugeDlg::LoadSettings()
 			 m_DataUseDlg.m_bWarnVoice = pps->m_bWarnVoice;
 			 m_DataUseDlg.m_bRenewDay = pps->m_bRenewDay;
 			 m_DataUseDlg.m_bRenewMonth = pps->m_bRenewMonth;
+
+			 m_lBytesDownHisLast = pps->m_lBytesDown;
+			 m_lBytesUpHisLast = pps->m_lBytesUp;
 
 		}
 		else
@@ -1858,4 +1882,61 @@ void CVizNetGaugeDlg::OnShowWindow(BOOL bShow, UINT nStatus)
 void CVizNetGaugeDlg::OnOptionsConfiguredatausage()
 {
 	if (IDOK == m_DataUseDlg.DoModal()) SaveSettings();
+}
+
+
+void CVizNetGaugeDlg::OnOptionsResetdatausage()
+{
+	m_lBytesDownHis = 0;
+	m_lBytesUpHis = 0;
+	m_lBytesDownHisLast = 0;
+	m_lBytesUpHisLast = 0;
+	SaveSettings();
+}
+
+void CVizNetGaugeDlg::SaveHis()
+{
+	if (m_uBackUpInterval > VNG_BACKUP_INTERVAL)
+	{
+		m_lBytesDownHis = m_lBytesDownHisLast + m_lBytesDown; //last counter + current counter will be saved
+		m_lBytesUpHis = m_lBytesUpHisLast + m_lBytesUp;
+		SaveSettings();
+		m_uBackUpInterval = 0;
+	}
+	m_uBackUpInterval++;
+}
+
+void CVizNetGaugeDlg::Warn()
+{
+	if (!m_DataUseDlg.m_bWarn) return;
+	if (m_IsWarnSent) return;
+
+	if (m_lBytesRem < m_DataUseDlg.m_lThreshold)
+	{
+		m_IsWarnSent = TRUE;
+
+		if (m_DataUseDlg.m_bWarnDing)
+		{
+			PlaySound(MAKEINTRESOURCE(IDR_WAVE1), NULL, SND_RESOURCE);
+		}
+		if (m_DataUseDlg.m_bWarnVoice)
+		{
+			PlaySound(MAKEINTRESOURCE(IDR_WAVE2), NULL, SND_RESOURCE);
+		}
+		if (m_DataUseDlg.m_bWarnPop)
+		{
+			CString s;
+			s.Format(_T("Warning: You have %ld MB of data left!"), m_lBytesRem);
+			MessageBox(s, _T("Data threshold reached"), MB_ICONWARNING);
+		}
+	}
+}
+
+void CVizNetGaugeDlg::OnOptionsRestoredatabacktohistorical()
+{
+	m_lBytesDownHisLast -= m_lBytesDown;// current counter will be deducted from historical
+	m_lBytesUpHisLast -= m_lBytesUp;
+	m_lBytesDownHis = m_lBytesDownHisLast;
+	m_lBytesUpHis = m_lBytesUpHisLast;
+	SaveSettings();
 }

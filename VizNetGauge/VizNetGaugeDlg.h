@@ -15,8 +15,9 @@ using namespace std;
 
 #pragma comment(lib, "wbemuuid.lib")
 
-#define VNG_MAX_INTERFACES	10
-#define VNG_MAX_SAMPLES		256
+#define VNG_MAX_INTERFACES		10
+#define VNG_MAX_SAMPLES			256
+#define VNG_BACKUP_INTERVAL		120
 
 #define VNG_DEFAULT_TOPMOST		0
 #define VNG_DEFAULT_UPDATEFREQ	1000
@@ -25,7 +26,6 @@ using namespace std;
 #define VNG_DEFAULT_THEME		0
 #define VNG_DEFAULT_INTERFACE	0
 //#define VNG_DEFAULT_
-
 
 #define VNG_TIMER			WM_USER + 200
 #define WM_TRAY_MESSAGE		WM_USER + 201
@@ -75,10 +75,16 @@ public:
 	CIMTYPE					m_lBytesSentPerSecType2;
 	LONG					m_lBytesReceivedPerSecHandle2;
 	LONG					m_lBytesSentPerSecHandle2;
-	LONG					m_lBytesDown;
-	LONG					m_lBytesUp;
-	LONG					m_lBytesTotal;
-	LONG					m_lBytesQuota;
+
+	LONGLONG				m_lBytesDownHisLast;
+	LONGLONG				m_lBytesUpHisLast;
+	LONGLONG				m_lBytesDownHis;
+	LONGLONG				m_lBytesUpHis;
+	LONGLONG				m_lBytesDown;
+	LONGLONG				m_lBytesUp;
+	LONGLONG				m_lBytesTotal;
+	LONGLONG				m_lBytesRem;
+	UINT					m_uBackUpInterval;
 
 	UINT m_uDownloadSamples[VNG_MAX_INTERFACES][VNG_MAX_SAMPLES];
 	UINT m_uUploadSamples[VNG_MAX_INTERFACES][VNG_MAX_SAMPLES];
@@ -96,6 +102,7 @@ public:
 	UINT m_uSelectedInterface;
 	CString m_sSelectedInterfaceName;
 	BOOL m_IsAutoDetect;
+	BOOL m_IsWarnSent;
 
 	typedef struct tagVNGSET
 	{
@@ -119,6 +126,8 @@ public:
 		BOOL m_bWarnVoice;
 		BOOL m_bRenewDay;
 		BOOL m_bRenewMonth;
+		LONG m_lBytesDown;
+		LONG m_lBytesUp;
 
 	} VNGSET;
 
@@ -160,6 +169,8 @@ public:
 	BOOL LoadSettings();
 	void ResetSettings();
 	void ApplySettingsToMenu();
+	void SaveHis();
+	void Warn();
 
 // Dialog Data
 #ifdef AFX_DESIGN_TIME
@@ -220,4 +231,6 @@ public:
 	afx_msg void OnOptionsSettings();
 	afx_msg void OnShowWindow(BOOL bShow, UINT nStatus);
 	afx_msg void OnOptionsConfiguredatausage();
+	afx_msg void OnOptionsResetdatausage();
+	afx_msg void OnOptionsRestoredatabacktohistorical();
 };

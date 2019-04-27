@@ -217,6 +217,10 @@
     <Image Include="res\OormiLogo.png" />
     <Image Include="res\VizNetGauge.ico" />
   </ItemGroup>
+  <ItemGroup>
+    <Media Include="res\ding.wav" />
+    <Media Include="res\warn.wav" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
