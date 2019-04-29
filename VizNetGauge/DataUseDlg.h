@@ -16,7 +16,7 @@ public:
 	enum { IDD = IDD_DIALOG_DATAUSE };
 #endif
 
-	LONG m_lMaxData;
+	LONGLONG m_lMaxData;
 	LONG m_lThreshold;
 	UINT m_uPeriod1;
 	UINT m_uPeriod2;

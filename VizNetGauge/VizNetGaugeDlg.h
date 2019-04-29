@@ -82,7 +82,9 @@ public:
 	LONGLONG				m_lBytesUpHis;
 	LONGLONG				m_lBytesDown;
 	LONGLONG				m_lBytesUp;
-	LONGLONG				m_lBytesTotal;
+	LONGLONG				m_lBytesDownInitial;
+	LONGLONG				m_lBytesUpInitial;
+//	LONGLONG				m_lBytesTotal;
 	LONGLONG				m_lBytesRem;
 	UINT					m_uBackUpInterval;
 
@@ -102,7 +104,13 @@ public:
 	UINT m_uSelectedInterface;
 	CString m_sSelectedInterfaceName;
 	BOOL m_IsAutoDetect;
-	BOOL m_IsWarnSent;
+	
+	BOOL m_IsWarnSent;	
+	BOOL m_IsRenewed1;
+	BOOL m_IsRenewed2;
+	BOOL m_IsInitial;
+	UINT m_uToday;
+	UINT m_uMonth;
 
 	typedef struct tagVNGSET
 	{
@@ -116,7 +124,7 @@ public:
 		UINT m_uSetUnused2;
 		UINT m_uSetUnused3;
 		UINT m_uSetUnused4;
-		LONG m_lMaxData;
+		LONGLONG m_lMaxData;
 		LONG m_lThreshold;
 		UINT m_uPeriod1;
 		UINT m_uPeriod2;
@@ -126,8 +134,11 @@ public:
 		BOOL m_bWarnVoice;
 		BOOL m_bRenewDay;
 		BOOL m_bRenewMonth;
-		LONG m_lBytesDown;
-		LONG m_lBytesUp;
+		LONGLONG m_lBytesDown;
+		LONGLONG m_lBytesUp;
+		UINT m_uToday;
+		BOOL m_IsRenewed2;
+		UINT m_uMonth;
 
 	} VNGSET;
 
@@ -171,6 +182,8 @@ public:
 	void ApplySettingsToMenu();
 	void SaveHis();
 	void Warn();
+	void Renew();
+	void ResetHis(BOOL silent);
 
 // Dialog Data
 #ifdef AFX_DESIGN_TIME

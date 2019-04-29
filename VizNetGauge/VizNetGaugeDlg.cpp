@@ -112,8 +112,9 @@ BOOL CVizNetGaugeDlg::OnInitDialog()
 	InitDraw();
 	InitWMI();
 	if (!LoadSettings()) ResetSettings();
+	Renew();
 
-	m_NetHelper.ReportUsage(_T("VizNetGauge"), m_uVMaj * 10 + m_uVMin);
+	//m_NetHelper.ReportUsage(_T("VizNetGauge"), m_uVMaj * 10 + m_uVMin);
 
 	return TRUE;  // return TRUE  unless you set the focus to a control
 }
@@ -180,7 +181,7 @@ void CVizNetGaugeDlg::InitSamples()
 	m_fAverageTotalUploadSpeed = 0.0f;
 	m_IsAutoDetect = FALSE;
 
-	m_lBytesTotal = 0;
+//	m_lBytesTotal = 0;
 	m_lBytesDown = 0;
 	m_lBytesUp = 0;
 	m_lBytesRem = 0;
@@ -188,9 +189,14 @@ void CVizNetGaugeDlg::InitSamples()
 	m_lBytesUpHis = 0;
 	m_lBytesDownHisLast = 0;
 	m_lBytesUpHisLast = 0;
+	m_lBytesUpInitial = 0;
+	m_lBytesDownInitial = 0;
 
 	m_uBackUpInterval = 0;
 	m_IsWarnSent = FALSE;
+	m_IsRenewed1 = FALSE;
+	m_IsRenewed2 = FALSE;
+	m_IsInitial = TRUE;
 
 
 }
@@ -265,8 +271,8 @@ void CVizNetGaugeDlg::PaintGauge()
 	bitMap->CreateCompatibleBitmap(pDC, rClient.Width(), rClient.Height());
 	CBitmap * oldMap = dcMem->SelectObject(bitMap);
 
-	rDClient.bottom = (float)rClient.bottom *0.9f;
-	if(rDClient.Height()<150)rDClient.bottom = (float)rClient.bottom *0.8f;
+	rDClient.bottom = (LONG)((float)rClient.bottom *0.9f);
+	if (rDClient.Height() < 150)rDClient.bottom = (LONG)((float)rClient.bottom *0.8f);
 
 	//background
 	DrawBackground(dcMem, rClient, rDClient);
@@ -309,8 +315,8 @@ void CVizNetGaugeDlg::DrawBackground(CDC * pDC, CRect clRect, CRect r)
 	//COLORREF crBack = RGB(m_uBkIntensity, m_uBkIntensity, m_uBkIntensity);
 	pDC->FillSolidRect(clRect, m_crBackground);
 
-	int top = (float)clRect.bottom*0.9f;
-	if(r.Height()<150)top = (float)clRect.bottom*0.8f;
+	int top = (int)((float)clRect.bottom*0.9f);
+	if(r.Height()<150)top = (int)((float)clRect.bottom*0.8f);
 	CRect rData(clRect.left, top, clRect.right, clRect.bottom);
 	pDC->FillSolidRect(rData, m_crDataBackground);
 
@@ -527,7 +533,7 @@ void CVizNetGaugeDlg::DrawDataText(CDC * pDC, CRect clRect)
 
 	CRect rText;
 	rText.left = clRect.left;
-	rText.top = clRect.bottom + clRect.bottom*0.015f;
+	rText.top = clRect.bottom + (LONG)(clRect.bottom*0.015f);
 	rText.right = clRect.right;
 	rText.bottom = clRect.bottom + 400;
 	
@@ -535,9 +541,9 @@ void CVizNetGaugeDlg::DrawDataText(CDC * pDC, CRect clRect)
 
 	CString sValue;
 	UINT mb = 1048576;// 1024 * 1024;
-	LONG dn = (m_lBytesDownHisLast + m_lBytesDown);
-	LONG up = (m_lBytesUpHisLast + m_lBytesUp);
-	LONG total = (dn + up) / mb;
+	LONGLONG dn = (m_lBytesDownHisLast + m_lBytesDown);
+	LONGLONG up = (m_lBytesUpHisLast + m_lBytesUp);
+	LONGLONG total = (dn + up) / mb;
 	m_lBytesRem = (m_DataUseDlg.m_lMaxData) - total;
 
 	if (m_bIsUpload) sValue.Format(_T("%ld MB Total : : %ld MB Remaining"), total, m_lBytesRem);
@@ -551,9 +557,6 @@ void CVizNetGaugeDlg::DrawDataText(CDC * pDC, CRect clRect)
 
 	CFont fValue;
 	fValue.CreatePointFont((int)(m_uValueFontSize * 4 * GetScaleRatio()), m_sFont);
-
-	//CFont fDesc;
-	//fDesc.CreatePointFont((int)(m_uValueFontSize * 2 * GetScaleRatio()), m_sFont);
 
 	CFont * oldFont2 = pDC->SelectObject(&fValue);
 	pDC->SetBkMode(TRANSPARENT);
@@ -627,6 +630,7 @@ void CVizNetGaugeDlg::OnTimer(UINT_PTR nIDEvent)
 	{
 		Plot();
 		SaveHis();
+		Renew();
 	}
 
 	CDialogEx::OnTimer(nIDEvent);
@@ -644,8 +648,6 @@ void CVizNetGaugeDlg::OnDestroy()
 
 	SaveSettings();
 
-	CDialogEx::OnDestroy();
-
 	KillTimer(m_uTimer);
 	WMICleanup();
 
@@ -657,6 +659,8 @@ void CVizNetGaugeDlg::OnDestroy()
 	// Unload the menu resources
 	m_MenuTray.DestroyMenu();
 	m_MenuPopup.DestroyMenu();
+
+	CDialogEx::OnDestroy();
 
 }
 
@@ -1076,13 +1080,6 @@ BOOL CVizNetGaugeDlg::GetStatsRefresherRaw()
 	// First time through, get the handles and names of interfaces.
 	if (m_bIsInitHandles2)
 	{
-		//if (FAILED(hr = apEnumAccess[0]->GetPropertyHandle(
-		//	L"Name",
-		//	&m_lInterfaceNameType,
-		//	&m_lInterfaceNameHandle)))
-		//{
-		//	goto CLEANUP;
-		//}
 		if (FAILED(hr = apEnumAccess[0]->GetPropertyHandle(
 			L"BytesReceivedPerSec",
 			&m_lBytesReceivedPerSecType2,
@@ -1098,46 +1095,19 @@ BOOL CVizNetGaugeDlg::GetStatsRefresherRaw()
 			goto CLEANUP;
 		}
 
-		/*for (i = 0; i < dwNumReturned; i++)
-		{
-			long nb = 0;
-			byte data[200];
-
-			if (FAILED(hr = apEnumAccess[i]->ReadPropertyValue(m_lInterfaceNameHandle, 200, &nb, data)))
-			{
-				goto CLEANUP;
-			}
-
-			//interface names
-			wstring wstr(reinterpret_cast<wchar_t*>(data), nb / sizeof(wchar_t));
-			CString sName(wstr.c_str());
-
-			if ((i + 2) < VNG_MAX_INTERFACES) //0 and 1 are for total and auto modes
-			{
-				m_sNetInterfaces[i + 2] = sName;
-				m_uNetInterfaceCount++;
-			}
-		}
-
-		UpdateMenuInterfaceNames();*/
 		m_bIsInitHandles2 = FALSE;
+		m_IsInitial = TRUE;
 	}
 
-	m_lBytesTotal = 0;
 	m_lBytesDown = 0;
 	m_lBytesUp = 0;
 
 	for (i = 0; i < dwNumReturned; i++)
 	{
 		long nb = 0;
-		//byte data[200];
 		DWORD dwBytesRecdPerSec = 0;
 		DWORD dwBytesSentPerSec = 0;
 
-		//if (FAILED(hr = apEnumAccess[i]->ReadPropertyValue(m_lInterfaceNameHandle, 200, &nb, data)))
-		//{
-		//	goto CLEANUP;
-		//}
 		if (FAILED(hr = apEnumAccess[i]->ReadDWORD(m_lBytesReceivedPerSecHandle2, &dwBytesRecdPerSec)))
 		{
 			goto CLEANUP;
@@ -1147,22 +1117,27 @@ BOOL CVizNetGaugeDlg::GetStatsRefresherRaw()
 			goto CLEANUP;
 		}
 
-		//interface names
-		//wstring wstr(reinterpret_cast<wchar_t*>(data), nb / sizeof(wchar_t));
-		//CString sName(wstr.c_str());
-		//m_sNetInterfaces[i] = sName;
-
-		//sample
-		//InsertSample(i + 2, dwBytesRecdPerSec, dwBytesSentPerSec);
-
+		//accumulate for all interfaces
 		m_lBytesDown += dwBytesRecdPerSec;
 		m_lBytesUp += dwBytesSentPerSec;
-		m_lBytesTotal += dwBytesRecdPerSec + dwBytesSentPerSec;
 
 		// Done with the object
 		apEnumAccess[i]->Release();
 		apEnumAccess[i] = NULL;
 	}
+
+	if (m_IsInitial)
+	{
+		m_IsInitial = !m_lBytesDown; //ensure non-zero counter
+		m_lBytesDownInitial = m_lBytesDown;
+		m_lBytesUpInitial = m_lBytesUp;
+	}
+
+	m_lBytesDown -= m_lBytesDownInitial;
+	m_lBytesUp -= m_lBytesUpInitial;
+
+	//m_lBytesDown *= 1000;//test
+	//m_lBytesUp *= 1000;//test
 
 	if (NULL != apEnumAccess)
 	{
@@ -1223,6 +1198,14 @@ void CVizNetGaugeDlg::WMICleanup()
 	{
 		pRefresher->Release();
 	}
+	if (NULL != pConfigRaw)
+	{
+		pConfigRaw->Release();
+	}
+	if (NULL != pRefresherRaw)
+	{
+		pRefresherRaw->Release();
+	}
 
 	CoUninitialize();
 
@@ -1274,7 +1257,7 @@ void CVizNetGaugeDlg::GetTotalAllInterfaces()
 
 		m_uDownloadSamples[0][0] = 0;
 		m_uUploadSamples[0][0] = 0;
-		for (int i = 2; i < m_uNetInterfaceCount; i++)
+		for (UINT i = 2; i < m_uNetInterfaceCount; i++)
 		{
 			//collect sample from all interfaces in iInterface=0
 			m_uDownloadSamples[0][0] += m_uDownloadSamples[i][0];
@@ -1294,7 +1277,7 @@ void CVizNetGaugeDlg::AutodetectActiveInterface()
 	{
 		float fMaxAverage = 0.0f;
 		float fSum = 0;
-		for (int i = 2; i < m_uNetInterfaceCount; i++)
+		for (UINT i = 2; i < m_uNetInterfaceCount; i++)
 		{
 			fSum = m_fAverageDownloadSpeed[i] + m_fAverageUploadSpeed[i];
 			if (fSum > fMaxAverage)
@@ -1313,7 +1296,7 @@ void CVizNetGaugeDlg::UpdateMenuInterfaceNames()
 	MENUITEMINFO info;
 	info.cbSize = sizeof(MENUITEMINFO);
 	info.fMask = MIIM_ID;
-	for (int j = 0; j < m_uNetInterfaceCount; j++)
+	for (UINT j = 0; j < m_uNetInterfaceCount; j++)
 	{
 		info.wID = 32808 + j;
 		m_MenuPopup.GetSubMenu(0)->GetSubMenu(3)->InsertMenuItem(j+2, &info, TRUE);
@@ -1668,7 +1651,7 @@ void CVizNetGaugeDlg::ClearCheckInterface()
 {
 	if (m_uNetInterfaceCount > VNG_MAX_INTERFACES)m_uNetInterfaceCount = 2;
 
-	for (int i = 0; i < m_uNetInterfaceCount; i++)
+	for (UINT i = 0; i < m_uNetInterfaceCount; i++)
 	{
 		m_MenuPopup.CheckMenuItem(ID_INTERFACES_NIF1 + i, (MF_UNCHECKED | MF_BYCOMMAND));
 	}
@@ -1744,7 +1727,9 @@ void CVizNetGaugeDlg::SaveSettings()
 
 	ps.m_lBytesDown = m_lBytesDownHis;
 	ps.m_lBytesUp = m_lBytesUpHis;
-
+	ps.m_uToday = m_uToday;
+	ps.m_IsRenewed2 = m_IsRenewed2;
+	ps.m_uMonth = m_uMonth;
 
 	AfxGetApp()->WriteProfileBinary(_T("VizNetGauge") + profile, _T("Settings"), (LPBYTE)&ps, sizeof(ps));
 }
@@ -1756,6 +1741,7 @@ BOOL CVizNetGaugeDlg::LoadSettings()
 	profile.Format(_T("%d%d"), m_uVMaj, m_uVMin);
 	VNGSET *pps;
 	UINT n;
+
 	if (AfxGetApp()->GetProfileBinary(_T("VizNetGauge") + profile, _T("Settings"), (LPBYTE*)&pps, &n))
 	{
 		if (n == sizeof(VNGSET))
@@ -1780,6 +1766,9 @@ BOOL CVizNetGaugeDlg::LoadSettings()
 
 			 m_lBytesDownHisLast = pps->m_lBytesDown;
 			 m_lBytesUpHisLast = pps->m_lBytesUp;
+			 m_uToday = pps->m_uToday;
+			 m_IsRenewed2 = pps->m_IsRenewed2;
+			 m_uMonth = pps->m_uMonth;
 
 		}
 		else
@@ -1853,6 +1842,9 @@ void CVizNetGaugeDlg::ResetSettings()
 	m_DataUseDlg.m_bWarnVoice = 1;
 	m_DataUseDlg.m_bRenewDay = 0;
 	m_DataUseDlg.m_bRenewMonth = 1;
+	m_uToday = 0;
+	m_IsRenewed2 = TRUE;
+	m_uMonth = 0;
 
 	SaveSettings();
 }
@@ -1887,11 +1879,7 @@ void CVizNetGaugeDlg::OnOptionsConfiguredatausage()
 
 void CVizNetGaugeDlg::OnOptionsResetdatausage()
 {
-	m_lBytesDownHis = 0;
-	m_lBytesUpHis = 0;
-	m_lBytesDownHisLast = 0;
-	m_lBytesUpHisLast = 0;
-	SaveSettings();
+	ResetHis(FALSE);
 }
 
 void CVizNetGaugeDlg::SaveHis()
@@ -1904,6 +1892,49 @@ void CVizNetGaugeDlg::SaveHis()
 		m_uBackUpInterval = 0;
 	}
 	m_uBackUpInterval++;
+
+}
+
+void CVizNetGaugeDlg::ResetHis(BOOL silent)
+{
+	if (!silent)
+	{
+		if(IDYES != AfxMessageBox(_T("All data counters will be reset to 0. Are you sure?"), MB_YESNOCANCEL)) return;
+	}
+
+	m_lBytesDownHis = 0;
+	m_lBytesUpHis = 0;
+	m_lBytesDownHisLast = 0;
+	m_lBytesUpHisLast = 0;
+	m_IsInitial = TRUE;
+	SaveSettings();
+
+}
+
+void CVizNetGaugeDlg::Renew()
+{
+	int day = CTime::GetCurrentTime().GetDay();
+	int month = CTime::GetCurrentTime().GetMonth();
+	
+	//day = 1;//test
+	//month = 6;
+	
+	//renewed after 1 day
+	if ((day != m_uToday) && (m_DataUseDlg.m_bRenewDay))
+	{
+		m_uToday = day;
+		ResetHis(TRUE);
+	}
+	
+	//renewed on a specific date every month
+	if ((day >= m_DataUseDlg.m_uPeriod2) && (m_DataUseDlg.m_bRenewMonth) && (!m_IsRenewed2))
+	{
+		m_IsRenewed2 = TRUE;
+		m_uMonth = month;
+		ResetHis(TRUE);
+	}
+	m_IsRenewed2 = month == m_uMonth;
+
 }
 
 void CVizNetGaugeDlg::Warn()
@@ -1934,9 +1965,9 @@ void CVizNetGaugeDlg::Warn()
 
 void CVizNetGaugeDlg::OnOptionsRestoredatabacktohistorical()
 {
-	m_lBytesDownHisLast -= m_lBytesDown;// current counter will be deducted from historical
-	m_lBytesUpHisLast -= m_lBytesUp;
-	m_lBytesDownHis = m_lBytesDownHisLast;
-	m_lBytesUpHis = m_lBytesUpHisLast;
-	SaveSettings();
+	//m_lBytesDownHisLast -= m_lBytesDown;// current counter will be deducted from historical
+	//m_lBytesUpHisLast -= m_lBytesUp;
+	//m_lBytesDownHis = m_lBytesDownHisLast;
+	//m_lBytesUpHis = m_lBytesUpHisLast;
+	//SaveSettings();
 }
