@@ -1136,6 +1136,16 @@ BOOL CVizNetGaugeDlg::GetStatsRefresherRaw()
 	m_lBytesDown -= m_lBytesDownInitial;
 	m_lBytesUp -= m_lBytesUpInitial;
 
+	//deal with NIC reset
+	if (m_lBytesDown < 0 || m_lBytesUp < 0)
+	{
+		SaveHis();
+		m_lBytesDown = 0;
+		m_lBytesUp = 0;
+		m_lBytesDownInitial = m_lBytesDown;
+		m_lBytesUpInitial = m_lBytesUp;
+	}
+
 	//m_lBytesDown *= 1000;//test
 	//m_lBytesUp *= 1000;//test
 
@@ -1674,7 +1684,7 @@ void CVizNetGaugeDlg::OnHelpGetmoreapps()
 }
 
 
-void CVizNetGaugeDlg::OnHelpCheckforupdates()
+void CVizNetGaugeDlg::OnHelpCheckforupdates()//TODO: change txt file url
 {
 	m_NetHelper.Checkforupdates(m_uVMaj, m_uVMin,
 		_T("https://oormi.in/software/cbp/updatevng.txt"),

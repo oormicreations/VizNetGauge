@@ -1,1 +1,1 @@
-1|0|https://github.com/oormicreations/VizNetGauge/releases
+1|1|https://github.com/oormicreations/VizNetGauge/releases
