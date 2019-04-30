@@ -35,6 +35,8 @@ https://github.com/oormicreations/VizNetGauge/releases
 * Auto scale the graph.
 * Auto detection of active network interfaces.
 * Display a single network interface or the total traffic from all.
+* Data usage counters.
+* Data usage warning.
 * Built in themes.
 * Customizations such as averaging times, update frequency and units.
 * Remembers window position and customizations.
@@ -45,9 +47,12 @@ https://github.com/oormicreations/VizNetGauge/releases
 
 ---
 
-**What is new in version 1.0**
+**What is new in version 1.1**
 
-See above.
+* Data usage counters.
+* Data usage warning.
+* Data usage renewal.
+* Bug fixes.
 
 ---
 

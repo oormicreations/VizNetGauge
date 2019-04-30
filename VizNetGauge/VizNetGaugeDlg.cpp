@@ -533,7 +533,7 @@ void CVizNetGaugeDlg::DrawDataText(CDC * pDC, CRect clRect)
 
 	CRect rText;
 	rText.left = clRect.left;
-	rText.top = clRect.bottom + (LONG)(clRect.bottom*0.015f);
+	rText.top = clRect.bottom + (LONG)(clRect.bottom*0.015f) + 1;
 	rText.right = clRect.right;
 	rText.bottom = clRect.bottom + 400;
 	
@@ -546,8 +546,8 @@ void CVizNetGaugeDlg::DrawDataText(CDC * pDC, CRect clRect)
 	LONGLONG total = (dn + up) / mb;
 	m_lBytesRem = (m_DataUseDlg.m_lMaxData) - total;
 
-	if (m_bIsUpload) sValue.Format(_T("%ld MB Total : : %ld MB Remaining"), total, m_lBytesRem);
-	else sValue.Format(_T("%ld MB Down : : %ld MB Up"), dn/mb, up/mb);
+	if (m_bIsUpload) sValue.Format(_T("%lld MB Total : : %lld MB Remaining"), total, m_lBytesRem);
+	else sValue.Format(_T("%lld MB Down : : %lld MB Up"), dn/mb, up/mb);
 
 	DRAWTEXTPARAMS dtParams;
 	dtParams.cbSize = sizeof(DRAWTEXTPARAMS);
@@ -1699,8 +1699,12 @@ void CVizNetGaugeDlg::OnOptionsSettings()
 void CVizNetGaugeDlg::SaveSettings()
 {
 	CString profile;
-	profile.Format(_T("%d%d"), m_uVMaj, m_uVMin);
 	VNGSET ps;
+#ifdef DEBUG
+	profile.Format(_T("%d%d_d"), m_uVMaj, m_uVMin);
+#else
+	profile.Format(_T("%d%d"), m_uVMaj, m_uVMin);
+#endif // DEBUG
 
 	ps.m_bSetTopMost = m_bTopmostMode;
 	ps.m_uSetUpdateFreq = m_uTimerDelay;
@@ -1738,9 +1742,14 @@ void CVizNetGaugeDlg::SaveSettings()
 BOOL CVizNetGaugeDlg::LoadSettings()
 {
 	CString profile;
-	profile.Format(_T("%d%d"), m_uVMaj, m_uVMin);
 	VNGSET *pps;
 	UINT n;
+
+#ifdef DEBUG
+	profile.Format(_T("%d%d_d"), m_uVMaj, m_uVMin);
+#else
+	profile.Format(_T("%d%d"), m_uVMaj, m_uVMin);
+#endif // DEBUG
 
 	if (AfxGetApp()->GetProfileBinary(_T("VizNetGauge") + profile, _T("Settings"), (LPBYTE*)&pps, &n))
 	{
@@ -1913,8 +1922,8 @@ void CVizNetGaugeDlg::ResetHis(BOOL silent)
 
 void CVizNetGaugeDlg::Renew()
 {
-	int day = CTime::GetCurrentTime().GetDay();
-	int month = CTime::GetCurrentTime().GetMonth();
+	UINT day = CTime::GetCurrentTime().GetDay();
+	UINT month = CTime::GetCurrentTime().GetMonth();
 	
 	//day = 1;//test
 	//month = 6;
