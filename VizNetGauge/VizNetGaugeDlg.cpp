@@ -78,6 +78,7 @@ BEGIN_MESSAGE_MAP(CVizNetGaugeDlg, CDialogEx)
 	ON_COMMAND(ID_OPTIONS_CONFIGUREDATAUSAGE, &CVizNetGaugeDlg::OnOptionsConfiguredatausage)
 	ON_COMMAND(ID_OPTIONS_RESETDATAUSAGE, &CVizNetGaugeDlg::OnOptionsResetdatausage)
 	ON_COMMAND(ID_OPTIONS_RESTOREDATABACKTOHISTORICAL, &CVizNetGaugeDlg::OnOptionsRestoredatabacktohistorical)
+	ON_WM_POWERBROADCAST()
 END_MESSAGE_MAP()
 
 
@@ -197,6 +198,7 @@ void CVizNetGaugeDlg::InitSamples()
 	m_IsRenewed1 = FALSE;
 	m_IsRenewed2 = FALSE;
 	m_IsInitial = TRUE;
+	m_bWakeup = FALSE;
 
 
 }
@@ -548,6 +550,8 @@ void CVizNetGaugeDlg::DrawDataText(CDC * pDC, CRect clRect)
 
 	if (m_bIsUpload) sValue.Format(_T("%lld MB Total : : %lld MB Remaining"), total, m_lBytesRem);
 	else sValue.Format(_T("%lld MB Down : : %lld MB Up"), dn/mb, up/mb);
+
+	//if (m_bWakeup)sValue.Format(_T("Wakeup"));
 
 	DRAWTEXTPARAMS dtParams;
 	dtParams.cbSize = sizeof(DRAWTEXTPARAMS);
@@ -991,6 +995,11 @@ BOOL CVizNetGaugeDlg::GetStatsRefresher()
 		//CString sName(wstr.c_str());
 		//m_sNetInterfaces[i] = sName;
 
+		if (m_bWakeup)
+		{
+			dwBytesRecdPerSec = dwBytesSentPerSec = 0;
+		}
+
 		//sample
 		InsertSample(i+2, dwBytesRecdPerSec, dwBytesSentPerSec);
 
@@ -1125,18 +1134,20 @@ BOOL CVizNetGaugeDlg::GetStatsRefresherRaw()
 		apEnumAccess[i]->Release();
 		apEnumAccess[i] = NULL;
 	}
-
-	if (m_IsInitial)
+	
+	//deal with wakeup corruption
+	if (m_IsInitial || m_bWakeup)
 	{
 		m_IsInitial = !m_lBytesDown; //ensure non-zero counter
 		m_lBytesDownInitial = m_lBytesDown;
 		m_lBytesUpInitial = m_lBytesUp;
+		m_bWakeup = FALSE;
 	}
 
 	m_lBytesDown -= m_lBytesDownInitial;
 	m_lBytesUp -= m_lBytesUpInitial;
 
-	//deal with NIC reset
+	//deal with NIC reset 
 	if (m_lBytesDown < 0 || m_lBytesUp < 0)
 	{
 		SaveHis();
@@ -1989,4 +2000,14 @@ void CVizNetGaugeDlg::OnOptionsRestoredatabacktohistorical()
 	//m_lBytesDownHis = m_lBytesDownHisLast;
 	//m_lBytesUpHis = m_lBytesUpHisLast;
 	//SaveSettings();
+}
+
+
+UINT CVizNetGaugeDlg::OnPowerBroadcast(UINT nPowerEvent, LPARAM nEventData)
+{
+	if (PBT_APMSUSPEND == nPowerEvent) {
+		// Going to sleep
+		m_bWakeup = TRUE;
+	}
+	return CDialogEx::OnPowerBroadcast(nPowerEvent, nEventData);
 }

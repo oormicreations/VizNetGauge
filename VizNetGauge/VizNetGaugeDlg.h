@@ -111,6 +111,7 @@ public:
 	BOOL m_IsInitial;
 	UINT m_uToday;
 	UINT m_uMonth;
+	BOOL m_bWakeup;
 
 	typedef struct tagVNGSET
 	{
@@ -246,4 +247,5 @@ public:
 	afx_msg void OnOptionsConfiguredatausage();
 	afx_msg void OnOptionsResetdatausage();
 	afx_msg void OnOptionsRestoredatabacktohistorical();
+	afx_msg UINT OnPowerBroadcast(UINT nPowerEvent, LPARAM nEventData);
 };
