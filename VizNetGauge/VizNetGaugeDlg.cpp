@@ -1953,6 +1953,8 @@ void CVizNetGaugeDlg::ResetHis(BOOL silent)
 	m_lBytesUpHis = 0;
 	m_lBytesDownHisLast = 0;
 	m_lBytesUpHisLast = 0;
+	m_lBytesDownLast = 0;
+	m_lBytesUpLast = 0;
 	m_IsInitial = TRUE;
 	SaveSettings();
 
