@@ -192,6 +192,8 @@ void CVizNetGaugeDlg::InitSamples()
 	m_lBytesUpHisLast = 0;
 	m_lBytesUpInitial = 0;
 	m_lBytesDownInitial = 0;
+	m_lBytesDownLast = 0;
+	m_lBytesUpLast = 0;
 
 	m_uBackUpInterval = 0;
 	m_IsWarnSent = FALSE;
@@ -1134,7 +1136,7 @@ BOOL CVizNetGaugeDlg::GetStatsRefresherRaw()
 		apEnumAccess[i]->Release();
 		apEnumAccess[i] = NULL;
 	}
-	
+
 	//deal with wakeup corruption
 	if (m_IsInitial || m_bWakeup)
 	{
@@ -1143,6 +1145,7 @@ BOOL CVizNetGaugeDlg::GetStatsRefresherRaw()
 		m_lBytesUpInitial = m_lBytesUp;
 		m_bWakeup = FALSE;
 	}
+
 
 	m_lBytesDown -= m_lBytesDownInitial;
 	m_lBytesUp -= m_lBytesUpInitial;
@@ -1159,6 +1162,20 @@ BOOL CVizNetGaugeDlg::GetStatsRefresherRaw()
 
 	//m_lBytesDown *= 1000;//test
 	//m_lBytesUp *= 1000;//test
+
+	//net disconnects
+	if (m_lBytesDown < m_lBytesDownLast || m_lBytesUp < m_lBytesUpLast)
+	{
+		SaveHis();
+		m_lBytesDownInitial = m_lBytesDown;
+		m_lBytesUpInitial = m_lBytesUp;
+		m_lBytesDownHisLast = m_lBytesDownHisLast + m_lBytesDownLast;
+		m_lBytesUpHisLast = m_lBytesUpHisLast + m_lBytesUpLast;
+	}
+
+	m_lBytesDownLast = m_lBytesDown;
+	m_lBytesUpLast = m_lBytesUp;
+
 
 	if (NULL != apEnumAccess)
 	{

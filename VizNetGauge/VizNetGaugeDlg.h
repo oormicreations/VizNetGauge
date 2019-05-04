@@ -84,7 +84,8 @@ public:
 	LONGLONG				m_lBytesUp;
 	LONGLONG				m_lBytesDownInitial;
 	LONGLONG				m_lBytesUpInitial;
-//	LONGLONG				m_lBytesTotal;
+	LONGLONG				m_lBytesDownLast;
+	LONGLONG				m_lBytesUpLast;
 	LONGLONG				m_lBytesRem;
 	UINT					m_uBackUpInterval;
 
