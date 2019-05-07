@@ -25,6 +25,7 @@ using namespace std;
 #define VNG_DEFAULT_AVE			10.0f
 #define VNG_DEFAULT_THEME		0
 #define VNG_DEFAULT_INTERFACE	0
+#define VNG_DEFAULT_DISCARD		10
 //#define VNG_DEFAULT_
 
 #define VNG_TIMER			WM_USER + 200
@@ -107,12 +108,14 @@ public:
 	BOOL m_IsAutoDetect;
 	
 	BOOL m_IsWarnSent;	
-	BOOL m_IsRenewed1;
+	//BOOL m_IsRenewed1;
 	BOOL m_IsRenewed2;
 	BOOL m_IsInitial;
 	UINT m_uToday;
 	UINT m_uMonth;
 	BOOL m_bWakeup;
+	UINT m_uDiscardCount;
+
 
 	typedef struct tagVNGSET
 	{

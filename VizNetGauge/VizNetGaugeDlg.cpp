@@ -197,10 +197,11 @@ void CVizNetGaugeDlg::InitSamples()
 
 	m_uBackUpInterval = 0;
 	m_IsWarnSent = FALSE;
-	m_IsRenewed1 = FALSE;
+	//m_IsRenewed1 = FALSE;
 	m_IsRenewed2 = FALSE;
 	m_IsInitial = TRUE;
 	m_bWakeup = FALSE;
+	m_uDiscardCount = VNG_DEFAULT_DISCARD;
 
 
 }
@@ -552,6 +553,8 @@ void CVizNetGaugeDlg::DrawDataText(CDC * pDC, CRect clRect)
 
 	if (m_bIsUpload) sValue.Format(_T("%lld MB Total : : %lld MB Remaining"), total, m_lBytesRem);
 	else sValue.Format(_T("%lld MB Down : : %lld MB Up"), dn/mb, up/mb);
+
+	if (m_uDiscardCount > 0)sValue = _T("Initializing Counters");
 
 	//if (m_bWakeup)sValue.Format(_T("Wakeup"));
 
@@ -1001,6 +1004,11 @@ BOOL CVizNetGaugeDlg::GetStatsRefresher()
 		{
 			dwBytesRecdPerSec = dwBytesSentPerSec = 0;
 		}
+		//discard first few samples
+		if (m_uDiscardCount > 0)
+		{
+			dwBytesRecdPerSec = dwBytesSentPerSec = 0;
+		}
 
 		//sample
 		InsertSample(i+2, dwBytesRecdPerSec, dwBytesSentPerSec);
@@ -1143,6 +1151,9 @@ BOOL CVizNetGaugeDlg::GetStatsRefresherRaw()
 		m_IsInitial = !m_lBytesDown; //ensure non-zero counter
 		m_lBytesDownInitial = m_lBytesDown;
 		m_lBytesUpInitial = m_lBytesUp;
+		m_lBytesDownLast = 0;
+		m_lBytesUpLast = 0;
+
 		m_bWakeup = FALSE;
 	}
 
@@ -1171,6 +1182,16 @@ BOOL CVizNetGaugeDlg::GetStatsRefresherRaw()
 		m_lBytesUpInitial = m_lBytesUp;
 		m_lBytesDownHisLast = m_lBytesDownHisLast + m_lBytesDownLast;
 		m_lBytesUpHisLast = m_lBytesUpHisLast + m_lBytesUpLast;
+	}
+
+	//discard first few samples
+	if (m_uDiscardCount > 0)
+	{
+		m_lBytesDown = 0;
+		m_lBytesUp = 0;
+		m_lBytesDownInitial = m_lBytesDown;
+		m_lBytesUpInitial = m_lBytesUp;
+		m_uDiscardCount--;
 	}
 
 	m_lBytesDownLast = m_lBytesDown;
@@ -1920,7 +1941,11 @@ void CVizNetGaugeDlg::OnShowWindow(BOOL bShow, UINT nStatus)
 
 void CVizNetGaugeDlg::OnOptionsConfiguredatausage()
 {
-	if (IDOK == m_DataUseDlg.DoModal()) SaveSettings();
+	if (IDOK == m_DataUseDlg.DoModal())
+	{
+		m_IsRenewed2 = FALSE;
+		SaveSettings();
+	}
 }
 
 
@@ -2027,6 +2052,12 @@ UINT CVizNetGaugeDlg::OnPowerBroadcast(UINT nPowerEvent, LPARAM nEventData)
 	if (PBT_APMSUSPEND == nPowerEvent) {
 		// Going to sleep
 		m_bWakeup = TRUE;
+		m_IsInitial = TRUE;
+		m_lBytesDownHis = m_lBytesDownHisLast + m_lBytesDown; //last counter + current counter will be saved
+		m_lBytesUpHis = m_lBytesUpHisLast + m_lBytesUp;
+		SaveSettings();
+		m_uDiscardCount = VNG_DEFAULT_DISCARD;
+
 	}
 	return CDialogEx::OnPowerBroadcast(nPowerEvent, nEventData);
 }
