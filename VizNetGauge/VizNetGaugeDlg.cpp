@@ -1146,6 +1146,7 @@ BOOL CVizNetGaugeDlg::GetStatsRefresherRaw()
 	}
 
 	//deal with wakeup corruption
+	if (m_bWakeup) LoadSettings();
 	if (m_IsInitial || m_bWakeup)
 	{
 		m_IsInitial = !m_lBytesDown; //ensure non-zero counter
@@ -1157,6 +1158,10 @@ BOOL CVizNetGaugeDlg::GetStatsRefresherRaw()
 		m_bWakeup = FALSE;
 	}
 
+	if (m_uDiscardCount > 0)
+	{
+		m_IsInitial = TRUE;
+	}
 
 	m_lBytesDown -= m_lBytesDownInitial;
 	m_lBytesUp -= m_lBytesUpInitial;
@@ -1990,7 +1995,7 @@ void CVizNetGaugeDlg::Renew()
 	UINT day = CTime::GetCurrentTime().GetDay();
 	UINT month = CTime::GetCurrentTime().GetMonth();
 	
-	//day = 1;//test
+	//day = 11;//test
 	//month = 6;
 	
 	//renewed after 1 day
